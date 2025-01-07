@@ -11,7 +11,8 @@
     "version": "1.0",
     "permissions": [
       "tabs",
-      "scripting"
+      "scripting",
+      "sidePanel"
     ],
     "side_panel": {
     "default_path": "popup.html"
