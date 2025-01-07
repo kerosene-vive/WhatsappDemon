@@ -1,0 +1,30 @@
+{
+    "manifest_version": 3,
+    "name": "WhatsApp Quick Message",
+    "version": "1.0",
+    "permissions": [
+      "tabs",
+      "scripting"
+    ],
+
+  "action": {
+    "default_popup": "popup.html"
+  },
+    "host_permissions": [
+      "https://web.whatsapp.com/*"
+    ],
+    "background": {
+      "service_worker": "background.js"
+    },
+    "content_scripts": [
+      {
+        "matches": ["https://web.whatsapp.com/*"],
+        "js": ["content.js"]
+      },
+      {
+        "matches": ["<all_urls>"],
+        "js": ["page-monitor.js"]
+      }
+    ]
+  }
+  
