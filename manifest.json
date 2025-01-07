@@ -1,17 +1,34 @@
 {
     "manifest_version": 3,
-    "name": "WhatsApp Quick Message",
+    "name": "WhatsApp Demon",
+    "description": "Scary Monsters and Nice Sprites 🎃",
+    "icons": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-32.png",
+      "64": "icons/icon-64.png",
+      "128": "icons/icon-128.png"
+    },
     "version": "1.0",
     "permissions": [
       "tabs",
       "scripting"
     ],
-
+    "side_panel": {
+    "default_path": "popup.html"
+  },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_title": "WhatsApp Demon",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "64": "icons/icon-64.png",
+      "128": "icons/icon-128.png"
+    }
   },
     "host_permissions": [
-      "https://web.whatsapp.com/*"
+      "https://web.whatsapp.com/*",
+      "<all_urls>"
     ],
     "background": {
       "service_worker": "background.js"
