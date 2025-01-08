@@ -1,18 +1,30 @@
-document.getElementById('startBtn').addEventListener('click', function() {
-    const progressContainer = document.querySelector('.progress-container');
-    const progress = document.querySelector('.progress');
-    const completionMessage = document.querySelector('.completion-message');
-    
-    // Show progress bar
-    progressContainer.classList.add('active');
-    
-    // Animate progress
-    setTimeout(() => {
-      progress.style.width = '100%';
+document.getElementById('startBtn1').addEventListener('click', async function() {
+  const taskGroup = this.closest('.task-group');
+  const loadingFill = taskGroup.querySelector('.loading-fill');
+  const completionMessage = taskGroup.querySelector('.completion-message');
+  const taskName = taskGroup.querySelector('.task-name');
+  const playButton = this;
+  
+  // Hide button and start initial loading
+  playButton.style.display = 'none';
+  loadingFill.style.width = '20%';
+  taskName.textContent = 'Opening WhatsApp...';
+  
+  // Send message to open WhatsApp
+  chrome.runtime.sendMessage({ action: "openWhatsApp" });
+  
+  // Listen for loading updates
+  chrome.runtime.onMessage.addListener(function listener(message) {
+    if (message.action === "loadingProgress") {
+      loadingFill.style.width = `${message.progress}%`;
       
-      // Show completion message when done
-      setTimeout(() => {
+      if (message.progress === 100) {
+        // Show completion
+        taskName.textContent = 'Initialize Task 1';
         completionMessage.classList.add('show');
-      }, 300);
-    }, 100);
+        // Remove listener
+        chrome.runtime.onMessage.removeListener(listener);
+      }
+    }
   });
+});
