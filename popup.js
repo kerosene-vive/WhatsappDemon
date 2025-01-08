@@ -4,8 +4,29 @@ document.getElementById('startBtn1').addEventListener('click', async function() 
   const completionMessage = taskGroup.querySelector('.completion-message');
   const taskName = taskGroup.querySelector('.task-name');
   const playButton = this;
+
+  // Reset to initial state first
+  const resetTask = () => {
+    loadingFill.style.transition = 'none'; // Disable transition for instant reset
+    loadingFill.style.width = '0%';
+    completionMessage.classList.remove('show');
+    taskName.textContent = 'Initialize Task 1';
+    
+    // Force a reflow to ensure the transition removal takes effect
+    loadingFill.offsetHeight;
+    
+    // Re-enable transition for next animation
+    loadingFill.style.transition = 'width 1.5s ease';
+  };
+
+  // If there's a previous completion, reset first
+  if (loadingFill.style.width === '100%' || completionMessage.classList.contains('show')) {
+    resetTask();
+    // Wait a brief moment to show the reset before starting new cycle
+    await new Promise(resolve => setTimeout(resolve, 300));
+  }
   
-  // Hide button and start initial loading
+  // Start new loading cycle
   playButton.style.display = 'none';
   loadingFill.style.width = '20%';
   taskName.textContent = 'Opening WhatsApp...';
@@ -20,8 +41,13 @@ document.getElementById('startBtn1').addEventListener('click', async function() 
       
       if (message.progress === 100) {
         // Show completion
-        taskName.textContent = 'Initialize Task 1';
         completionMessage.classList.add('show');
+        
+        // Show play button again for next cycle
+        setTimeout(() => {
+          playButton.style.display = 'flex';
+        }, 1000);
+        
         // Remove listener
         chrome.runtime.onMessage.removeListener(listener);
       }
