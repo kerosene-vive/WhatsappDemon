@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "WhatsApp Demon",
+    "name": "WhatsApp Demon Assistant",
     "description": "Scary Monsters and Nice Sprites 🎃",
     "icons": {
       "16": "icons/icon-16.png",
@@ -11,6 +11,7 @@
     "version": "1.0",
     "permissions": [
       "tabs",
+      "windows",
       "scripting",
       "sidePanel"
     ],
@@ -19,7 +20,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "WhatsApp Demon",
+    "default_title": "WhatsApp Demon Assistant",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",
@@ -33,16 +34,6 @@
     ],
     "background": {
       "service_worker": "background.js"
-    },
-    "content_scripts": [
-      {
-        "matches": ["https://web.whatsapp.com/*"],
-        "js": ["content.js"]
-      },
-      {
-        "matches": ["<all_urls>"],
-        "js": ["page-monitor.js"]
-      }
-    ]
+    }
   }
   
