@@ -41,6 +41,10 @@
     "content_scripts": [{
       "matches": ["https://web.whatsapp.com/*"],
       "js": ["content.js"]
+    }],
+    "web_accessible_resources": [{
+      "resources": ["notification.wav"],
+      "matches": ["<all_urls>"]
     }]
   }
   
