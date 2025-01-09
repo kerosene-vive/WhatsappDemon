@@ -1,9 +1,16 @@
-// content-script.js
+// Debug logging
+const log = (msg) => {
+    console.log(`[WhatsApp Export] ${msg}`);
+    chrome.runtime.sendMessage({ 
+        action: "debugLog", 
+        message: msg 
+    }).catch(() => {});
+};
 
-// Selectors and Constants
+// Constants
 const SELECTORS = {
     CHAT_LIST: {
-        container: '._amjv',
+        container: '#pane-side',  // Updated main container selector
         messages: '[role="row"]',
         mainPanel: '#main'
     },
@@ -17,7 +24,14 @@ const SELECTORS = {
     CHAT: {
         messageContainer: '.x3psx0u.xwib8y2.xkhd6sd.xrmvbpv',
         messageBox: '[role="application"]',
-        messageRow: '[role="row"]'
+        messageRow: '[role="row"]',
+        // New specific selectors for chat items
+        item: 'div._ak8l',
+        title: 'span._ao3e'
+    },
+    LOADING: {
+        main: '[role="application"]',
+        messageList: '[role="region"]'
     }
 };
 
@@ -39,29 +53,36 @@ const CLASSES = {
 const TIMEOUTS = {
     LOAD: 5000,
     CHAT_SELECT: 2000,
-    MESSAGE_LOAD: 2000
+    MESSAGE_LOAD: 2000,
+    INIT_RETRY: 1000
 };
 
-// Debug logging
-const log = (msg) => {
-    console.log(`[WhatsApp Export] ${msg}`);
-    chrome.runtime.sendMessage({ 
-        action: "debugLog", 
-        message: msg 
-    });
+// Initialization state
+let isInitialized = false;
+
+// Helper Functions
+const isLoaded = (selector) => {
+    const element = document.querySelector(selector);
+    return element && element.offsetParent !== null;
 };
 
-// Wait for an element with guaranteed existence
+const getMessages = () => {
+    return document.querySelectorAll(SELECTORS.MESSAGE.container);
+};
+
+const isChatOpen = () => {
+    return document.querySelector(SELECTORS.CHAT.messageContainer) !== null;
+};
+
+// Wait for element with timeout
 const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => {
     return new Promise((resolve, reject) => {
-        // Check if element already exists
         const existing = document.querySelector(selector);
         if (existing) {
             resolve(existing);
             return;
         }
 
-        // Create observer to watch for element
         const observer = new MutationObserver((mutations, obs) => {
             const element = document.querySelector(selector);
             if (element) {
@@ -70,13 +91,11 @@ const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => {
             }
         });
 
-        // Start observing with a timeout
         observer.observe(document.body, {
             childList: true,
             subtree: true
         });
 
-        // Set timeout
         setTimeout(() => {
             observer.disconnect();
             reject(new Error(`Timeout waiting for ${selector}`));
@@ -84,9 +103,21 @@ const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => {
     });
 };
 
+// Find first chat element
+const findFirstChat = (container) => {
+    // First try to find pinned chats (they have the pinned2 icon)
+    const allChats = container.querySelectorAll(SELECTORS.CHAT.item);
+    if (!allChats || allChats.length === 0) {
+        throw new Error('No chat elements found');
+    }
+    
+    // Return the first chat element
+    return allChats[0];
+};
+
 // Extract chat content
 const extractChatContent = () => {
-    const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+    const messages = getMessages();
     let content = '';
     
     messages.forEach(msg => {
@@ -109,13 +140,13 @@ async function automateWhatsAppExport() {
         log('Starting automation');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 10 });
         
-        // Wait for chat list
-        const chatList = await waitForElement(SELECTORS.CHAT_LIST.container);
+        // Wait for chat list container
+        const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
         log('Chat list loaded');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 30 });
 
-        // Find first chat and click it
-        const firstChat = chatList.querySelector(`.${CLASSES.CHAT.item}`);
+        // Find and click first chat using updated selector
+        const firstChat = findFirstChat(chatListContainer);
         if (!firstChat) {
             throw new Error('No chats found');
         }
@@ -130,7 +161,6 @@ async function automateWhatsAppExport() {
         log('Messages loaded');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 70 });
 
-        // Extract and save content
         const content = extractChatContent();
         if (!content) {
             throw new Error('No messages found');
@@ -138,7 +168,6 @@ async function automateWhatsAppExport() {
 
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 90 });
 
-        // Download file
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const blob = new Blob([content], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
@@ -156,7 +185,28 @@ async function automateWhatsAppExport() {
         chrome.runtime.sendMessage({ 
             action: "automationError", 
             error: error.message 
+        }).catch(() => {});
+    }
+}
+
+// Initialize content script
+async function initialize() {
+    if (isInitialized) return;
+    
+    try {
+        const response = await chrome.runtime.sendMessage({ 
+            action: 'contentScriptReady' 
         });
+        
+        if (response && response.status === 'acknowledged') {
+            isInitialized = true;
+            log('Content script initialized successfully');
+        } else {
+            throw new Error('Initialization not acknowledged');
+        }
+    } catch (error) {
+        log(`Initialization error: ${error.message}`);
+        setTimeout(initialize, TIMEOUTS.INIT_RETRY);
     }
 }
 
@@ -164,17 +214,32 @@ async function automateWhatsAppExport() {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     log(`Received message: ${request.action}`);
     
-    if (request.action === "ping") {
-        sendResponse({ status: 'ready' });
-        return true;
+    switch(request.action) {
+        case "ping":
+            sendResponse({ status: 'ready' });
+            break;
+            
+        case "startAutomation":
+            if (!isInitialized) {
+                sendResponse({ error: 'Content script not initialized' });
+                return true;
+            }
+            
+            automateWhatsAppExport().catch(error => {
+                log(`Automation error: ${error.message}`);
+                chrome.runtime.sendMessage({ 
+                    action: "automationError", 
+                    error: error.message 
+                }).catch(() => {});
+            });
+            
+            sendResponse({ status: 'automation started' });
+            break;
     }
     
-    if (request.action === "startAutomation") {
-        automateWhatsAppExport();
-        return true;
-    }
+    return true;
 });
 
-// Signal that content script is ready
+// Start initialization
 log('Content script loaded');
-chrome.runtime.sendMessage({ action: 'contentScriptReady' });
+initialize();

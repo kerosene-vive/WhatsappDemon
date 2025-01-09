@@ -2,8 +2,10 @@
 
 // Constants
 const TIMEOUTS = {
-  SCRIPT_INIT: 1000,
-  WHATSAPP_LOAD: 5000
+  SCRIPT_INIT: 2000,
+  WHATSAPP_LOAD: 5000,
+  CONNECTION_RETRY: 1000,
+  MAX_RETRIES: 5
 };
 
 const STATES = {
@@ -27,68 +29,78 @@ chrome.runtime.onInstalled.addListener(() => {
           path: 'popup.html',
           enabled: true
       })
-      .then(() => {
-          chrome.sidePanel.setPanelBehavior({
-              openPanelOnActionClick: true
-          });
-      })
       .catch(error => log(`Sidepanel setup error: ${error.message}`));
 });
 
-// Inject content script with retry
-async function injectContentScript(tabId, retries = 3) {
-  for (let i = 0; i < retries; i++) {
-      try {
-          await chrome.scripting.executeScript({
-              target: { tabId },
-              files: ['content.js']
-          });
-          log(`Content script injected in tab ${tabId}`);
-          return true;
-      } catch (error) {
-          log(`Injection attempt ${i + 1} failed: ${error.message}`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-  }
-  throw new Error('Failed to inject content script after retries');
-}
-
-// Check if content script is responsive
-async function checkContentScript(tabId) {
+// Simple content script injection without immediate verification
+async function injectContentScript(tabId) {
   try {
-      await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+      await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content.js']
+      });
+      log(`Content script injection attempted for tab ${tabId}`);
       return true;
-  } catch {
+  } catch (error) {
+      log(`Injection failed: ${error.message}`);
       return false;
   }
 }
 
-// Handle WhatsApp tab
+// Separate verification function with retries
+async function verifyContentScript(tabId, maxRetries = TIMEOUTS.MAX_RETRIES) {
+  for (let i = 0; i < maxRetries; i++) {
+      try {
+          const response = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+          if (response && response.status === 'ready') {
+              log(`Content script verified in tab ${tabId}`);
+              return true;
+          }
+      } catch (error) {
+          log(`Verification attempt ${i + 1} failed, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CONNECTION_RETRY));
+      }
+  }
+  return false;
+}
+
+// Handle WhatsApp tab with separated injection and verification
 async function handleWhatsAppTab(tab, isNew = false) {
   try {
+      tabStates.set(tab.id, STATES.LOADING);
+      
       // Activate tab
       await chrome.tabs.update(tab.id, { active: true });
       
-      // Wait if it's a new tab
       if (isNew) {
           await new Promise(resolve => setTimeout(resolve, TIMEOUTS.WHATSAPP_LOAD));
       }
-      
-      // Check if content script is already working
-      const isReady = await checkContentScript(tab.id);
-      if (!isReady) {
-          await injectContentScript(tab.id);
-          await new Promise(resolve => setTimeout(resolve, TIMEOUTS.SCRIPT_INIT));
+
+      // Try injection first
+      const injected = await injectContentScript(tab.id);
+      if (!injected) {
+          throw new Error('Failed to inject content script');
       }
-      
+
+      // Wait for script initialization
+      await new Promise(resolve => setTimeout(resolve, TIMEOUTS.SCRIPT_INIT));
+
+      // Verify script is working
+      const verified = await verifyContentScript(tab.id);
+      if (!verified) {
+          throw new Error('Content script verification failed');
+      }
+
       // Start automation
       log('Starting automation');
       await chrome.tabs.sendMessage(tab.id, { 
           action: "startAutomation" 
       });
       
+      tabStates.set(tab.id, STATES.READY);
       return true;
   } catch (error) {
+      tabStates.set(tab.id, STATES.ERROR);
       throw new Error(`Tab handling failed: ${error.message}`);
   }
 }
@@ -96,7 +108,6 @@ async function handleWhatsAppTab(tab, isNew = false) {
 // Main WhatsApp handler
 async function handleWhatsApp() {
   try {
-      // Check for existing WhatsApp tab
       const tabs = await chrome.tabs.query({
           url: "https://web.whatsapp.com/*"
       });
@@ -111,7 +122,6 @@ async function handleWhatsApp() {
               active: true
           });
 
-          // Wait for tab to load
           await new Promise((resolve, reject) => {
               const timeout = setTimeout(() => {
                   reject(new Error('Tab load timeout'));
@@ -130,7 +140,6 @@ async function handleWhatsApp() {
       }
   } catch (error) {
       log(`Error: ${error.message}`);
-      // Notify popup of error
       chrome.runtime.sendMessage({ 
           action: "automationError", 
           error: error.message 
@@ -153,7 +162,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
       case "automationError":
           log(`Error: ${request.error}`);
-          // Forward error to popup
           chrome.runtime.sendMessage(request).catch(() => {});
           break;
 
@@ -161,11 +169,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           if (sender.tab) {
               tabStates.set(sender.tab.id, STATES.READY);
               log(`Content script ready in tab ${sender.tab.id}`);
+              sendResponse({ status: 'acknowledged' });
           }
           break;
 
       case "loadingProgress":
-          // Forward progress to popup
           chrome.runtime.sendMessage(request).catch(() => {});
           break;
   }
