@@ -13,7 +13,9 @@
       "tabs",
       "windows",
       "scripting",
-      "sidePanel"
+      "downloads",
+      "sidePanel",
+      "activeTab"
     ],
     "side_panel": {
     "default_path": "popup.html"
@@ -33,7 +35,12 @@
       "<all_urls>"
     ],
     "background": {
-      "service_worker": "background.js"
-    }
+      "service_worker": "background.js",
+       "type": "module"
+    },
+    "content_scripts": [{
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"]
+    }]
   }
   
