@@ -42,7 +42,10 @@ document.getElementById('startBtn1').addEventListener('click', async function() 
       if (message.progress === 100) {
         // Show completion
         completionMessage.classList.add('show');
-        
+          // Play notification sound
+        const audio = document.getElementById('notificationSound');
+        audio.play().catch(error => console.log('Error playing sound:', error));
+    
         // Show play button again for next cycle
         setTimeout(() => {
           playButton.style.display = 'flex';
