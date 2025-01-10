@@ -1,6 +1,4 @@
-// background.js
-
-// Constants
+//background.js
 const TIMEOUTS = {
   SCRIPT_INIT: 2000,
   WHATSAPP_LOAD: 5000,
@@ -15,13 +13,11 @@ const STATES = {
   ERROR: 'error'
 };
 
-// Logging
 const log = (msg) => console.log(`[WhatsApp Exporter] ${msg}`);
 
-// Track content script states
 const tabStates = new Map();
 
-// Installation handler
+
 chrome.runtime.onInstalled.addListener(() => {
   log('Extension installed');
   chrome.sidePanel
@@ -32,7 +28,40 @@ chrome.runtime.onInstalled.addListener(() => {
       .catch(error => log(`Sidepanel setup error: ${error.message}`));
 });
 
-// Simple content script injection without immediate verification
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    log(`Received message: ${request.action}`);
+    switch (request.action) {
+        case "debugLog":
+            log(`Content: ${request.message}`);
+            break;
+        case "openWhatsApp":
+            handleWhatsApp();
+            break;
+        case "automationError":
+            log(`Error: ${request.error}`);
+            chrome.runtime.sendMessage(request).catch(() => {});
+            break;
+        case "contentScriptReady":
+            if (sender.tab) {
+                tabStates.set(sender.tab.id, STATES.READY);
+                log(`Content script ready in tab ${sender.tab.id}`);
+                sendResponse({ status: 'acknowledged' });
+            }
+            break;
+        case "loadingProgress":
+            chrome.runtime.sendMessage(request).catch(() => {});
+            break;
+    }
+    return true;
+  });
+  
+  
+chrome.tabs.onRemoved.addListener((tabId) => {
+    tabStates.delete(tabId);
+  });
+
+
 async function injectContentScript(tabId) {
   try {
       await chrome.scripting.executeScript({
@@ -47,7 +76,7 @@ async function injectContentScript(tabId) {
   }
 }
 
-// Separate verification function with retries
+
 async function verifyContentScript(tabId, maxRetries = TIMEOUTS.MAX_RETRIES) {
   for (let i = 0; i < maxRetries; i++) {
       try {
@@ -64,39 +93,27 @@ async function verifyContentScript(tabId, maxRetries = TIMEOUTS.MAX_RETRIES) {
   return false;
 }
 
-// Handle WhatsApp tab with separated injection and verification
+
 async function handleWhatsAppTab(tab, isNew = false) {
   try {
       tabStates.set(tab.id, STATES.LOADING);
-      
-      // Activate tab
       await chrome.tabs.update(tab.id, { active: true });
-      
       if (isNew) {
           await new Promise(resolve => setTimeout(resolve, TIMEOUTS.WHATSAPP_LOAD));
       }
-
-      // Try injection first
       const injected = await injectContentScript(tab.id);
       if (!injected) {
           throw new Error('Failed to inject content script');
       }
-
-      // Wait for script initialization
       await new Promise(resolve => setTimeout(resolve, TIMEOUTS.SCRIPT_INIT));
-
-      // Verify script is working
       const verified = await verifyContentScript(tab.id);
       if (!verified) {
           throw new Error('Content script verification failed');
       }
-
-      // Start automation
       log('Starting automation');
       await chrome.tabs.sendMessage(tab.id, { 
           action: "startAutomation" 
       });
-      
       tabStates.set(tab.id, STATES.READY);
       return true;
   } catch (error) {
@@ -105,13 +122,12 @@ async function handleWhatsAppTab(tab, isNew = false) {
   }
 }
 
-// Main WhatsApp handler
+
 async function handleWhatsApp() {
   try {
       const tabs = await chrome.tabs.query({
           url: "https://web.whatsapp.com/*"
       });
-
       if (tabs.length > 0) {
           log(`Found existing WhatsApp tab: ${tabs[0].id}`);
           await handleWhatsAppTab(tabs[0], false);
@@ -121,12 +137,10 @@ async function handleWhatsApp() {
               url: 'https://web.whatsapp.com',
               active: true
           });
-
           await new Promise((resolve, reject) => {
               const timeout = setTimeout(() => {
                   reject(new Error('Tab load timeout'));
               }, 30000);
-
               chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
                   if (tabId === newTab.id && info.status === 'complete') {
                       chrome.tabs.onUpdated.removeListener(listener);
@@ -146,42 +160,3 @@ async function handleWhatsApp() {
       }).catch(() => {});
   }
 }
-
-// Message listener
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  log(`Received message: ${request.action}`);
-
-  switch (request.action) {
-      case "debugLog":
-          log(`Content: ${request.message}`);
-          break;
-
-      case "openWhatsApp":
-          handleWhatsApp();
-          break;
-
-      case "automationError":
-          log(`Error: ${request.error}`);
-          chrome.runtime.sendMessage(request).catch(() => {});
-          break;
-
-      case "contentScriptReady":
-          if (sender.tab) {
-              tabStates.set(sender.tab.id, STATES.READY);
-              log(`Content script ready in tab ${sender.tab.id}`);
-              sendResponse({ status: 'acknowledged' });
-          }
-          break;
-
-      case "loadingProgress":
-          chrome.runtime.sendMessage(request).catch(() => {});
-          break;
-  }
-
-  return true;
-});
-
-// Tab cleanup
-chrome.tabs.onRemoved.addListener((tabId) => {
-  tabStates.delete(tabId);
-});
