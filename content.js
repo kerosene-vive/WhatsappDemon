@@ -184,39 +184,42 @@ async function automateWhatsAppExport() {
         const result = findTargetChat(chatListContainer);
         clickableChats = result.clickableAreas;
         chatTitles = result.titles;
-        clickableChat = clickableChats[0];
-        chatTitle = chatTitles[0];
-        if (!clickableChat) {
-            throw new Error('Target chat element not found');
+        for (let i = 0; i < clickableChats.length; i++) {
+            //add a random small delay to avoid being blocked by whatsapp
+            await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 1000)));
+            clickableChat = clickableChats[i];
+            chatTitle = chatTitles[i];
+            if (!clickableChat) {
+                throw new Error('Target chat element not found');
+            }
+            log('Target chat found, attempting to click');
+            chrome.runtime.sendMessage({ action: "loadingProgress", progress: 40 });
+            simulateClick(clickableChat);
+            log('Clicked target chat');
+            chrome.runtime.sendMessage({ action: "loadingProgress", progress: 50 });
+            await waitForElement(SELECTORS.CHAT.messageContainer);
+            log('Message container found');
+            await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
+            log('Waiting for messages completed');
+            const content = extractChatContent();
+            if (!content) {
+                //skip this chat if no messages found\
+                log('No messages found in this chat');
+                continue;
+            }
+            log('Content extracted successfully');
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `whatsapp-${chatTitle}.txt`;
+            log('Triggering download');
+            a.click();
+            URL.revokeObjectURL(url);
         }
-        log('Target chat found, attempting to click');
-        chrome.runtime.sendMessage({ action: "loadingProgress", progress: 40 });
-        simulateClick(clickableChat);
-        log('Clicked target chat');
-        chrome.runtime.sendMessage({ action: "loadingProgress", progress: 50 });
-        await waitForElement(SELECTORS.CHAT.messageContainer);
-        log('Message container found');
-        chrome.runtime.sendMessage({ action: "loadingProgress", progress: 60 });
-        await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
-        log('Waiting for messages completed');
-        chrome.runtime.sendMessage({ action: "loadingProgress", progress: 70 });
-        const content = extractChatContent();
-        if (!content) {
-            throw new Error('No messages found');
-        }
-        log('Content extracted successfully');
-        chrome.runtime.sendMessage({ action: "loadingProgress", progress: 80 });
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `whatsapp-${chatTitle}.txt`;
-        log('Triggering download');
-        chrome.runtime.sendMessage({ action: "loadingProgress", progress: 90 });
-        a.click();
-        URL.revokeObjectURL(url);
         log('Export completed successfully');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 100 });
+
     } catch (error) {
         log(`Error during automation: ${error.message}`);
         chrome.runtime.sendMessage({
