@@ -82,6 +82,8 @@ const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => {
 };
 
 const findTargetChat = (container) => {
+    clickableAreas=[];
+    titles=[];
     const allChats = container.querySelectorAll(SELECTORS.CHAT.item);
     if (!allChats || allChats.length === 0) {
         throw new Error('No chat elements found');
@@ -94,16 +96,17 @@ const findTargetChat = (container) => {
     for (const chat of allChats) {
         const titleSpan = chat.querySelector(SELECTORS.CHAT.title);
         const title = titleSpan?.getAttribute('title');
-        if (title && (title === 'Open List ⭐️ ⭐️' || title.includes('Open List'))) {
+        if (title) {
             const gridCell = chat.querySelector(SELECTORS.CHAT.gridCell);
             const clickableArea = gridCell?.querySelector(SELECTORS.CHAT.clickableArea);
             if (clickableArea) {
                 log('Found target chat with matching title');
-                return clickableArea;
+                clickableAreas.push(clickableArea);
+                titles.push(title);
             }
         }
     }
-    throw new Error('Target chat "Open List" not found');
+    return { clickableAreas, titles };
 };
 
 const simulateClick = (element) => {
@@ -168,6 +171,8 @@ const extractChatContent = () => {
 
 async function automateWhatsAppExport() {
     try {
+        clickableChats = [];
+        chatTitles = [];
         log('Starting automation');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 10 });
         const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
@@ -176,7 +181,11 @@ async function automateWhatsAppExport() {
         await new Promise(resolve => setTimeout(resolve, 1500));
         log('Waiting completed, searching for target chat');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 30 });
-        const clickableChat = findTargetChat(chatListContainer);
+        const result = findTargetChat(chatListContainer);
+        clickableChats = result.clickableAreas;
+        chatTitles = result.titles;
+        clickableChat = clickableChats[0];
+        chatTitle = chatTitles[0];
         if (!clickableChat) {
             throw new Error('Target chat element not found');
         }
@@ -197,12 +206,11 @@ async function automateWhatsAppExport() {
         }
         log('Content extracted successfully');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 80 });
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const blob = new Blob([content], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `whatsapp-export-${timestamp}.txt`;
+        a.download = `whatsapp-${chatTitle}.txt`;
         log('Triggering download');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 90 });
         a.click();
