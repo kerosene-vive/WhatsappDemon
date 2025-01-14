@@ -18,7 +18,7 @@ document.getElementById('startBtn1').addEventListener('click', async function() 
   }
   playButton.style.display = 'none';
   loadingFill.style.width = '20%';
-  taskName.textContent = 'Opening WhatsApp...';
+  taskName.textContent = 'Downloading chats...';
   chrome.runtime.sendMessage({ action: "openWhatsApp" });
   chrome.runtime.onMessage.addListener(function listener(message) {
     if (message.action === "loadingProgress") {
