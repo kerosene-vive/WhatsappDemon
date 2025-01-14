@@ -17,7 +17,6 @@ const log = (msg) => console.log(`[WhatsApp Exporter] ${msg}`);
 
 const tabStates = new Map();
 
-
 chrome.runtime.onInstalled.addListener(() => {
   log('Extension installed');
   chrome.sidePanel
@@ -27,7 +26,6 @@ chrome.runtime.onInstalled.addListener(() => {
       })
       .catch(error => log(`Sidepanel setup error: ${error.message}`));
 });
-
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     log(`Received message: ${request.action}`);

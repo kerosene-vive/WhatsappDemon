@@ -217,7 +217,6 @@ async function automateWhatsAppExport() {
         }
         log('Export completed successfully');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 100 });
-
     } catch (error) {
         log(`Error during automation: ${error.message}`);
         chrome.runtime.sendMessage({
