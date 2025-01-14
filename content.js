@@ -185,7 +185,6 @@ async function automateWhatsAppExport() {
         clickableChats = result.clickableAreas;
         chatTitles = result.titles;
         for (let i = 0; i < clickableChats.length; i++) {
-            //add a random small delay to avoid being blocked by whatsapp
             await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 1000)));
             clickableChat = clickableChats[i];
             chatTitle = chatTitles[i];
@@ -203,7 +202,6 @@ async function automateWhatsAppExport() {
             log('Waiting for messages completed');
             const content = extractChatContent();
             if (!content) {
-                //skip this chat if no messages found\
                 log('No messages found in this chat');
                 continue;
             }
