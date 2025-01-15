@@ -82,8 +82,8 @@ const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => {
 };
 
 const findTargetChat = (container) => {
-    clickableAreas=[];
-    titles=[];
+    const clickableAreas = [];
+    const titles = [];
     const allChats = container.querySelectorAll(SELECTORS.CHAT.item);
     if (!allChats || allChats.length === 0) {
         throw new Error('No chat elements found');
@@ -168,55 +168,52 @@ const extractChatContent = () => {
     return content;
 };
 
-
 async function automateWhatsAppExport() {
     try {
-        clickableChats = [];
-        chatTitles = [];
         log('Starting automation');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 10 });
+        
         const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
         log('Chat list container loaded');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 20 });
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        log('Waiting completed, searching for target chat');
-        chrome.runtime.sendMessage({ action: "loadingProgress", progress: 30 });
-        const result = findTargetChat(chatListContainer);
-        clickableChats = result.clickableAreas;
-        chatTitles = result.titles;
+        
+        const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
+        const allContents = [];
+        
         for (let i = 0; i < clickableChats.length; i++) {
-            await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 1000)));
-            clickableChat = clickableChats[i];
-            chatTitle = chatTitles[i];
-            if (!clickableChat) {
-                throw new Error('Target chat element not found');
-            }
-            log('Target chat found, attempting to click');
-            chrome.runtime.sendMessage({ action: "loadingProgress", progress: 40 });
+            const clickableChat = clickableChats[i];
+            const chatTitle = chatTitles[i];
+            
+            await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(clickableChat);
-            log('Clicked target chat');
-            chrome.runtime.sendMessage({ action: "loadingProgress", progress: 50 });
+            
             await waitForElement(SELECTORS.CHAT.messageContainer);
-            log('Message container found');
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
-            log('Waiting for messages completed');
+            
             const content = extractChatContent();
-            if (!content) {
-                log('No messages found in this chat');
-                continue;
+            if (content) {
+                allContents.push({
+                    title: chatTitle,
+                    content: content
+                });
+                log(`Extracted content from: ${chatTitle}`);
             }
-            log('Content extracted successfully');
-            const blob = new Blob([content], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `whatsapp-${chatTitle}.txt`;
-            log('Triggering download');
-            a.click();
-            URL.revokeObjectURL(url);
+            
+            chrome.runtime.sendMessage({ 
+                action: "loadingProgress", 
+                progress: 20 + (60 * ((i + 1) / clickableChats.length)) 
+            });
         }
+
+        // Send the extracted content to background script for processing
+        chrome.runtime.sendMessage({
+            action: "processChats",
+            chats: allContents
+        });
+        
         log('Export completed successfully');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 100 });
+        
     } catch (error) {
         log(`Error during automation: ${error.message}`);
         chrome.runtime.sendMessage({
@@ -225,7 +222,6 @@ async function automateWhatsAppExport() {
         }).catch(() => {});
     }
 }
-
 
 async function initialize() {
     if (isInitialized) {
