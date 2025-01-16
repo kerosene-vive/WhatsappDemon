@@ -168,19 +168,17 @@ const extractChatContent = () => {
     return content;
 };
 
-async function automateWhatsAppExport() {
+async function automateWhatsAppExport(numberOfChats = 1) {
     try {
         log('Starting automation');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 10 });
-        
         const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
         log('Chat list container loaded');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 20 });
-        
         const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
         const allContents = [];
-        
-        for (let i = 0; i < clickableChats.length; i++) {
+        exportedChats = Math.min(clickableChats.length, numberOfChats);
+        for (let i = 0; i < exportedChats; i++) {
             const clickableChat = clickableChats[i];
             const chatTitle = chatTitles[i];
             
@@ -269,8 +267,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (!isInitialized) {
                 sendResponse({ error: 'Content script not initialized' });
                 return true;
-            }
-            automateWhatsAppExport().catch(error => {
+            }         
+            const numberOfChats = request.numberOfChats || 1;
+            automateWhatsAppExport(numberOfChats).catch(error => {
                 log(`Automation error: ${error.message}`);
                 chrome.runtime.sendMessage({
                     action: "automationError",
