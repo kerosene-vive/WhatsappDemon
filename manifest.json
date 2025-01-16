@@ -1,23 +1,24 @@
 {
-    "manifest_version": 3,
-    "name": "WhatsApp Demon Assistant",
-    "description": "Scary Monsters and Nice Sprites 🎃",
-    "icons": {
-      "16": "icons/icon-16.png",
-      "48": "icons/icon-32.png",
-      "64": "icons/icon-64.png",
-      "128": "icons/icon-128.png"
-    },
-    "version": "1.0",
-    "permissions": [
-      "tabs",
-      "windows",
-      "scripting",
-      "downloads",
-      "sidePanel",
-      "activeTab"
-    ],
-    "side_panel": {
+  "manifest_version": 3,
+  "name": "WhatsApp Demon Assistant",
+  "description": "Scary Monsters and Nice Sprites 🎃",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-32.png",
+    "64": "icons/icon-64.png",
+    "128": "icons/icon-128.png"
+  },
+  "version": "1.0",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "tabs",
+    "windows",
+    "scripting",
+    "downloads",
+    "sidePanel"
+  ],
+  "side_panel": {
     "default_path": "popup.html"
   },
   "action": {
@@ -30,21 +31,26 @@
       "128": "icons/icon-128.png"
     }
   },
-    "host_permissions": [
-      "https://web.whatsapp.com/*",
-      "<all_urls>"
+  "host_permissions": [
+    "https://web.whatsapp.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [{
+    "matches": ["https://web.whatsapp.com/*"],
+    "js": [
+      "lib/jspdf.umd.min.js",
+      "lib/jszip.min.js",
+      "content.js"
+    ]
+  }],
+  "web_accessible_resources": [{
+    "resources": [
+      "notification.wav",
+      "lib/*"
     ],
-    "background": {
-      "service_worker": "background.js",
-       "type": "module"
-    },
-    "content_scripts": [{
-      "matches": ["https://web.whatsapp.com/*"],
-      "js": ["content.js"]
-    }],
-    "web_accessible_resources": [{
-      "resources": ["notification.wav"],
-      "matches": ["<all_urls>"]
-    }]
-  }
-  
+    "matches": ["https://web.whatsapp.com/*"]
+  }]
+}
