@@ -1,68 +1,78 @@
 <!DOCTYPE html>
 <html>
-<audio id="notificationSound" src="notification.wav" preload="auto"></audio>
 <head>
-  <title>WhatsApp Demon</title>
-  <meta charset="UTF-8">
-  <link rel="stylesheet" href="popup.css">
+    <title>WhatsApp Demon</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <img src="icons/icon-128.png" alt="Assistant Icon" class="header-icon">
-      <div class="header-text">WhatsApp Demon</div>
-    </div>
-    <div class="task-group" id="text-export">
-      <div class="loading-fill"></div>
-      <div class="task-content">
-        <div class="task-name">Download chats</div>
-        <div class="button-group">
-          <button class="chat-button" data-chats="1" data-type="text">1 Chat</button>
-          <button class="chat-button" data-chats="10" data-type="text">10 Chats</button>
-          <button class="chat-button" data-chats="20" data-type="text">20 Chats</button>
+    <audio id="notificationSound" src="notification.wav" preload="auto"></audio>
+    <div class="container">
+        <div class="header">
+            <img src="icons/icon-128.png" alt="Assistant Icon" class="header-icon">
+            <div class="header-text">WhatsApp Demon</div>
         </div>
-        <div class="completion-message">Completed! ✓</div>
-      </div>
-    </div>
-    <div class="task-group" id="media-export">
-      <div class="loading-fill"></div>
-      <div class="task-content">
-        <div class="task-name">Download photos</div>
-        <div class="status-text"></div>
-        <div class="button-group">
-          <button class="chat-button" data-chats="1" data-type="photo">1 Chat</button>
-          <button class="chat-button" data-chats="10" data-type="photo">10 Chats</button>
-          <button class="chat-button" data-chats="20" data-type="photo">20 Chats</button>
+        
+        <!-- Text Export Section -->
+        <div class="task-group" id="text-export">
+            <div class="loading-fill"></div>
+            <div class="task-content">
+                <div class="task-name">Download Chat Text</div>
+                <div class="status-text"></div>
+                <div class="button-group">
+                    <button class="chat-button" data-chats="1" data-type="text">1 Chat</button>
+                    <button class="chat-button" data-chats="10" data-type="text">10 Chats</button>
+                    <button class="chat-button" data-chats="20" data-type="text">20 Chats</button>
+                </div>
+                <div class="completion-message">Download Complete! ✓</div>
+            </div>
         </div>
-        <div class="completion-message">Completed! ✓</div>
-      </div>
-    </div>
-    <div class="task-group" id="media-export">
-      <div class="loading-fill"></div>
-      <div class="task-content">
-        <div class="task-name">Download videos</div>
-        <div class="status-text"></div>
-        <div class="button-group">
-          <button class="chat-button" data-chats="1" data-type="video">1 Chat</button>
-          <button class="chat-button" data-chats="10" data-type="video">10 Chats</button>
-          <button class="chat-button" data-chats="20" data-type="video">20 Chats</button>
+
+        <!-- Photos Export Section -->
+        <div class="task-group" id="photo-export">
+            <div class="loading-fill"></div>
+            <div class="task-content">
+                <div class="task-name">Download Photos</div>
+                <div class="status-text"></div>
+                <div class="button-group">
+                    <button class="chat-button" data-chats="1" data-type="media" data-media-type="photo">1 Chat</button>
+                    <button class="chat-button" data-chats="10" data-type="media" data-media-type="photo">10 Chats</button>
+                    <button class="chat-button" data-chats="20" data-type="media" data-media-type="photo">20 Chats</button>
+                </div>
+                <div class="completion-message">Download Complete! ✓</div>
+            </div>
         </div>
-        <div class="completion-message">Completed! ✓</div>
-      </div>
-    </div>
-    <div class="task-group" id="media-export">
-      <div class="loading-fill"></div>
-      <div class="task-content">
-        <div class="task-name">Download documents</div>
-        <div class="status-text"></div>
-        <div class="button-group">
-          <button class="chat-button" data-chats="1" data-type="document">1 Chat</button>
-          <button class="chat-button" data-chats="10" data-type="document">10 Chats</button>
-          <button class="chat-button" data-chats="20" data-type="document">20 Chats</button>
+
+        <!-- Videos Export Section -->
+        <div class="task-group" id="video-export">
+            <div class="loading-fill"></div>
+            <div class="task-content">
+                <div class="task-name">Download Videos</div>
+                <div class="status-text"></div>
+                <div class="button-group">
+                    <button class="chat-button" data-chats="1" data-type="media" data-media-type="video">1 Chat</button>
+                    <button class="chat-button" data-chats="10" data-type="media" data-media-type="video">10 Chats</button>
+                    <button class="chat-button" data-chats="20" data-type="media" data-media-type="video">20 Chats</button>
+                </div>
+                <div class="completion-message">Download Complete! ✓</div>
+            </div>
         </div>
-        <div class="completion-message">Completed! ✓</div>
-      </div>
+
+        <!-- Documents Export Section -->
+        <div class="task-group" id="document-export">
+            <div class="loading-fill"></div>
+            <div class="task-content">
+                <div class="task-name">Download Documents</div>
+                <div class="status-text"></div>
+                <div class="button-group">
+                    <button class="chat-button" data-chats="1" data-type="media" data-media-type="document">1 Chat</button>
+                    <button class="chat-button" data-chats="10" data-type="media" data-media-type="document">10 Chats</button>
+                    <button class="chat-button" data-chats="20" data-type="media" data-media-type="document">20 Chats</button>
+                </div>
+                <div class="completion-message">Download Complete! ✓</div>
+            </div>
+        </div>
     </div>
-  <script src="popup.js"></script>
+    <script src="popup.js"></script>
 </body>
 </html>

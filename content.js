@@ -1,4 +1,4 @@
-// Content script for WhatsApp Web automation
+// Content script for WhatsApp Web automation with media support
 let isInitialized = false;
 let initializationAttempts = 0;
 const MAX_INIT_ATTEMPTS = 5;
@@ -16,6 +16,14 @@ const SELECTORS = {
         outgoing: '.message-out',
         incoming: '.message-in'
     },
+    MEDIA: {
+        image: 'img[src^="blob:"]',
+        video: 'video[src^="blob:"]',
+        document: '._2VSMU',
+        downloadButton: '._2qitd',
+        mediaViewerContainer: '._3YS_f._2A1R8',
+        closeViewerButton: '._3RUBq button'
+    },
     CHAT: {
         messageContainer: '[role="application"]',
         gridCell: '[role="gridcell"]',
@@ -29,7 +37,15 @@ const TIMEOUTS = {
     LOAD: 5000,
     CHAT_SELECT: 2000,
     MESSAGE_LOAD: 2000,
-    INIT_RETRY: 1000
+    MEDIA_LOAD: 3000,
+    INIT_RETRY: 1000,
+    DOWNLOAD_WAIT: 1000
+};
+
+const MIME_TYPES = {
+    IMAGE: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+    VIDEO: ['video/mp4', 'video/webm'],
+    DOCUMENT: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 };
 
 const log = (msg) => {
@@ -168,16 +184,101 @@ const extractChatContent = () => {
     return content;
 };
 
-async function automateWhatsAppExport(numberOfChats = 1) {
+const downloadMedia = async (mediaElement, type, timestamp) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            if (!mediaElement.src) {
+                reject(new Error('No source found for media element'));
+                return;
+            }
+
+            const response = await fetch(mediaElement.src);
+            const blob = await response.blob();
+            
+            const timeString = timestamp || new Date().toISOString();
+            const extension = type.startsWith('image') ? '.jpg' : 
+                            type.startsWith('video') ? '.mp4' : '.bin';
+            const filename = `whatsapp_media_${timeString.replace(/[^0-9]/g, '')}${extension}`;
+
+            chrome.runtime.sendMessage({
+                action: "downloadMedia",
+                data: {
+                    url: URL.createObjectURL(blob),
+                    filename: filename,
+                    type: type
+                }
+            });
+
+            resolve(filename);
+        } catch (error) {
+            reject(error);
+        }
+    });
+};
+
+const extractMediaContent = async () => {
+    const mediaItems = [];
+    log('Starting media extraction');
+
+    // Process images
+    const images = document.querySelectorAll(SELECTORS.MEDIA.image);
+    for (const img of images) {
+        try {
+            const timestamp = img.closest(SELECTORS.MESSAGE.container)
+                ?.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent;
+            await downloadMedia(img, 'image/jpeg', timestamp);
+            mediaItems.push({ type: 'image', timestamp });
+        } catch (error) {
+            log(`Error downloading image: ${error.message}`);
+        }
+    }
+
+    // Process videos
+    const videos = document.querySelectorAll(SELECTORS.MEDIA.video);
+    for (const video of videos) {
+        try {
+            const timestamp = video.closest(SELECTORS.MESSAGE.container)
+                ?.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent;
+            await downloadMedia(video, 'video/mp4', timestamp);
+            mediaItems.push({ type: 'video', timestamp });
+        } catch (error) {
+            log(`Error downloading video: ${error.message}`);
+        }
+    }
+
+    // Process documents
+    const documents = document.querySelectorAll(SELECTORS.MEDIA.document);
+    for (const doc of documents) {
+        try {
+            const downloadButton = doc.querySelector(SELECTORS.MEDIA.downloadButton);
+            if (downloadButton) {
+                const timestamp = doc.closest(SELECTORS.MESSAGE.container)
+                    ?.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent;
+                downloadButton.click();
+                mediaItems.push({ type: 'document', timestamp });
+                await new Promise(resolve => setTimeout(resolve, TIMEOUTS.DOWNLOAD_WAIT));
+            }
+        } catch (error) {
+            log(`Error downloading document: ${error.message}`);
+        }
+    }
+
+    return mediaItems;
+};
+
+async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
     try {
         log('Starting automation');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 10 });
+        
         const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
         log('Chat list container loaded');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 20 });
+        
         const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
         const allContents = [];
-        exportedChats = Math.min(clickableChats.length, numberOfChats);
+        const exportedChats = Math.min(clickableChats.length, numberOfChats);
+        
         for (let i = 0; i < exportedChats; i++) {
             const clickableChat = clickableChats[i];
             const chatTitle = chatTitles[i];
@@ -188,22 +289,27 @@ async function automateWhatsAppExport(numberOfChats = 1) {
             await waitForElement(SELECTORS.CHAT.messageContainer);
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
             
-            const content = extractChatContent();
-            if (content) {
-                allContents.push({
-                    title: chatTitle,
-                    content: content
-                });
-                log(`Extracted content from: ${chatTitle}`);
+            const textContent = extractChatContent();
+            let mediaContent = [];
+            
+            if (includeMedia) {
+                await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
+                mediaContent = await extractMediaContent();
             }
             
+            allContents.push({
+                title: chatTitle,
+                content: textContent,
+                media: includeMedia ? mediaContent : []
+            });
+            
+            log(`Extracted content from: ${chatTitle}`);
             chrome.runtime.sendMessage({ 
                 action: "loadingProgress", 
                 progress: 20 + (60 * ((i + 1) / clickableChats.length)) 
             });
         }
 
-        // Send the extracted content to background script for processing
         chrome.runtime.sendMessage({
             action: "processChats",
             chats: allContents
@@ -263,6 +369,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case "ping":
             sendResponse({ status: 'ready', initialized: isInitialized });
             break;
+            
         case "startAutomation":
             if (!isInitialized) {
                 sendResponse({ error: 'Content script not initialized' });
@@ -276,8 +383,61 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     error: error.message
                 }).catch(() => {});
             });
-            sendResponse({ status: 'automation started' });
+            sendResponse({ status: 'text automation started' });
             break;
+            
+        case "startMediaDownload":
+            if (!isInitialized) {
+                sendResponse({ error: 'Content script not initialized' });
+                return true;
+            }
+            const chatCount = request.numberOfChats || 1;
+            log('Starting media download automation');
+            
+            // Create an async function to handle the media download process
+            const handleMediaDownload = async () => {
+                try {
+                    const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
+                    const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
+                    const exportedChats = Math.min(clickableChats.length, chatCount);
+                    
+                    for (let i = 0; i < exportedChats; i++) {
+                        const clickableChat = clickableChats[i];
+                        const chatTitle = chatTitles[i];
+                        
+                        await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
+                        simulateClick(clickableChat);
+                        
+                        await waitForElement(SELECTORS.CHAT.messageContainer);
+                        await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
+                        
+                        const mediaContent = await extractMediaContent();
+                        log(`Extracted media from: ${chatTitle} - Found ${mediaContent.length} items`);
+                        
+                        chrome.runtime.sendMessage({ 
+                            action: "mediaProgress", 
+                            progress: (i + 1) / exportedChats * 100,
+                            chat: chatTitle,
+                            mediaCount: mediaContent.length
+                        });
+                    }
+                    
+                    log('Media download completed successfully');
+                    chrome.runtime.sendMessage({ action: "mediaDownloadComplete" });
+                    
+                } catch (error) {
+                    log(`Error during media download: ${error.message}`);
+                    chrome.runtime.sendMessage({
+                        action: "automationError",
+                        error: error.message
+                    }).catch(() => {});
+                }
+            };
+            
+            handleMediaDownload();
+            sendResponse({ status: 'media download started' });
+            break;
+            
         case "checkStatus":
             sendResponse({ 
                 status: 'active',
@@ -285,6 +445,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 attempts: initializationAttempts
             });
             break;
+            
         default:
             sendResponse({ status: 'unknown_action' });
             break;
