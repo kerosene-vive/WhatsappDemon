@@ -1,4 +1,3 @@
-// Content script for WhatsApp Web automation with media support
 let isInitialized = false;
 let initializationAttempts = 0;
 const MAX_INIT_ATTEMPTS = 5;
@@ -184,22 +183,18 @@ const extractChatContent = () => {
     return content;
 };
 
-const downloadMedia = async (mediaElement, type, timestamp) => {
+const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) => {
     return new Promise(async (resolve, reject) => {
         try {
             if (!mediaElement.src) {
                 reject(new Error('No source found for media element'));
                 return;
             }
-
             const response = await fetch(mediaElement.src);
             const blob = await response.blob();
-            
-            const timeString = timestamp || new Date().toISOString();
             const extension = type.startsWith('image') ? '.jpg' : 
                             type.startsWith('video') ? '.mp4' : '.bin';
-            const filename = `whatsapp_media_${timeString.replace(/[^0-9]/g, '')}${extension}`;
-
+            const filename = `photo_${chatTitle}${index}${extension}`;
             chrome.runtime.sendMessage({
                 action: "downloadMedia",
                 data: {
@@ -208,7 +203,6 @@ const downloadMedia = async (mediaElement, type, timestamp) => {
                     type: type
                 }
             });
-
             resolve(filename);
         } catch (error) {
             reject(error);
@@ -216,116 +210,97 @@ const downloadMedia = async (mediaElement, type, timestamp) => {
     });
 };
 
-const extractMediaContent = async () => {
+const extractMediaContent = async (chatTitle) => {
     const mediaItems = [];
     log('Starting media extraction');
-
-    // Process images
     const images = document.querySelectorAll(SELECTORS.MEDIA.image);
+    index = 1;
     for (const img of images) {
         try {
             const timestamp = img.closest(SELECTORS.MESSAGE.container)
                 ?.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent;
-            await downloadMedia(img, 'image/jpeg', timestamp);
+            await downloadMedia(img, 'image/jpeg', timestamp, chatTitle, index);
             mediaItems.push({ type: 'image', timestamp });
+            index++;
         } catch (error) {
             log(`Error downloading image: ${error.message}`);
         }
     }
-
-    // Process videos
-    const videos = document.querySelectorAll(SELECTORS.MEDIA.video);
-    for (const video of videos) {
-        try {
-            const timestamp = video.closest(SELECTORS.MESSAGE.container)
-                ?.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent;
-            await downloadMedia(video, 'video/mp4', timestamp);
-            mediaItems.push({ type: 'video', timestamp });
-        } catch (error) {
-            log(`Error downloading video: ${error.message}`);
-        }
-    }
-
-    // Process documents
-    const documents = document.querySelectorAll(SELECTORS.MEDIA.document);
-    for (const doc of documents) {
-        try {
-            const downloadButton = doc.querySelector(SELECTORS.MEDIA.downloadButton);
-            if (downloadButton) {
-                const timestamp = doc.closest(SELECTORS.MESSAGE.container)
-                    ?.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent;
-                downloadButton.click();
-                mediaItems.push({ type: 'document', timestamp });
-                await new Promise(resolve => setTimeout(resolve, TIMEOUTS.DOWNLOAD_WAIT));
-            }
-        } catch (error) {
-            log(`Error downloading document: ${error.message}`);
-        }
-    }
-
     return mediaItems;
 };
+
+const extractAndDownloadChat = async (chatTitle) => {
+    const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+    let content = '';
+    log(`Found ${messages.length} messages to extract from ${chatTitle}`);
+    messages.forEach((msg, index) => {
+        const text = msg.querySelector(SELECTORS.MESSAGE.text);
+        const timestamp = msg.querySelector(SELECTORS.MESSAGE.timestamp);
+        if (text) {
+            const time = timestamp ? timestamp.textContent.trim() : '';
+            const msgText = text.textContent.trim();
+            content += time ? `[${time}] ${msgText}\n` : `${msgText}\n`;
+            if (index % 100 === 0) {
+                log(`Processed ${index} messages...`);
+            }
+        }
+    });
+    const safeTitle = chatTitle.replace(/[^a-z0-9]/gi, '_');
+    const filename = `${safeTitle}_chat.txt`;
+    const blob = new Blob([`Chat with: ${chatTitle}\n\n${content}`], { type: 'text/plain' });
+    chrome.runtime.sendMessage({
+        action: "downloadChat",
+        data: {
+            url: URL.createObjectURL(blob),
+            filename: filename
+        }
+    });
+    return filename;
+};
+
 
 async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
     try {
         log('Starting automation');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 10 });
-        
         const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
         log('Chat list container loaded');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 20 });
-        
         const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
-        const allContents = [];
         const exportedChats = Math.min(clickableChats.length, numberOfChats);
-        
         for (let i = 0; i < exportedChats; i++) {
             const clickableChat = clickableChats[i];
             const chatTitle = chatTitles[i];
-            
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(clickableChat);
-            
             await waitForElement(SELECTORS.CHAT.messageContainer);
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
-            
-            const textContent = extractChatContent();
-            let mediaContent = [];
-            
+            const filename = await extractAndDownloadChat(chatTitle);
+            log(`Downloaded chat: ${filename}`);
             if (includeMedia) {
                 await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
-                mediaContent = await extractMediaContent();
+                await extractMediaContent(chatTitle);
             }
-            
-            allContents.push({
-                title: chatTitle,
-                content: textContent,
-                media: includeMedia ? mediaContent : []
-            });
-            
-            log(`Extracted content from: ${chatTitle}`);
             chrome.runtime.sendMessage({ 
-                action: "loadingProgress", 
-                progress: 20 + (60 * ((i + 1) / clickableChats.length)) 
+                action: "chatProgress", 
+                progress: Math.round((i + 1) / exportedChats * 100),
+                chatTitle: chatTitle 
             });
         }
-
-        chrome.runtime.sendMessage({
-            action: "processChats",
-            chats: allContents
-        });
-        
         log('Export completed successfully');
-        chrome.runtime.sendMessage({ action: "loadingProgress", progress: 100 });
-        
+        chrome.runtime.sendMessage({ 
+            action: "exportComplete",
+            message: `Successfully exported ${exportedChats} chats`
+        });
     } catch (error) {
         log(`Error during automation: ${error.message}`);
         chrome.runtime.sendMessage({
             action: "automationError",
             error: error.message
-        }).catch(() => {});
+        });
     }
 }
+
 
 async function initialize() {
     if (isInitialized) {
@@ -369,7 +344,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case "ping":
             sendResponse({ status: 'ready', initialized: isInitialized });
             break;
-            
         case "startAutomation":
             if (!isInitialized) {
                 sendResponse({ error: 'Content script not initialized' });
@@ -385,7 +359,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
             sendResponse({ status: 'text automation started' });
             break;
-            
         case "startMediaDownload":
             if (!isInitialized) {
                 sendResponse({ error: 'Content script not initialized' });
@@ -393,27 +366,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
             const chatCount = request.numberOfChats || 1;
             log('Starting media download automation');
-            
-            // Create an async function to handle the media download process
             const handleMediaDownload = async () => {
                 try {
                     const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
                     const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
                     const exportedChats = Math.min(clickableChats.length, chatCount);
-                    
                     for (let i = 0; i < exportedChats; i++) {
                         const clickableChat = clickableChats[i];
                         const chatTitle = chatTitles[i];
-                        
                         await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
                         simulateClick(clickableChat);
-                        
                         await waitForElement(SELECTORS.CHAT.messageContainer);
                         await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
-                        
-                        const mediaContent = await extractMediaContent();
+                        const mediaContent = await extractMediaContent(chatTitle);
                         log(`Extracted media from: ${chatTitle} - Found ${mediaContent.length} items`);
-                        
                         chrome.runtime.sendMessage({ 
                             action: "mediaProgress", 
                             progress: (i + 1) / exportedChats * 100,
@@ -421,10 +387,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             mediaCount: mediaContent.length
                         });
                     }
-                    
                     log('Media download completed successfully');
                     chrome.runtime.sendMessage({ action: "mediaDownloadComplete" });
-                    
                 } catch (error) {
                     log(`Error during media download: ${error.message}`);
                     chrome.runtime.sendMessage({
@@ -433,11 +397,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     }).catch(() => {});
                 }
             };
-            
             handleMediaDownload();
             sendResponse({ status: 'media download started' });
             break;
-            
         case "checkStatus":
             sendResponse({ 
                 status: 'active',
@@ -445,7 +407,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 attempts: initializationAttempts
             });
             break;
-            
         default:
             sendResponse({ status: 'unknown_action' });
             break;
