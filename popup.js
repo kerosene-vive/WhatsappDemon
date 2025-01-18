@@ -7,6 +7,7 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
     const completionMessage = taskGroup.querySelector('.completion-message');
     const taskName = taskGroup.querySelector('.task-name');
     const statusText = taskGroup.querySelector('.status-text');
+
     const resetTask = () => {      
       loadingFill.style.transition = 'none';
       loadingFill.style.width = '0%';
@@ -19,17 +20,20 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
       resetTask();
       await new Promise(resolve => setTimeout(resolve, 300));
     }
+
     const buttons = taskGroup.querySelectorAll('.chat-button');
     buttons.forEach(btn => btn.disabled = true);
     loadingFill.style.width = '20%';
     const originalTaskName = taskName.textContent;
-    const actionText = exportType === 'media' ? 'Downloading media from' : 'Downloading';
+    const actionText = exportType === 'media' ? 'Downloading photos from' : 'Downloading';
     taskName.textContent = `${actionText} ${numberOfChats} ${numberOfChats === 1 ? 'chat' : 'chats'}...`;
+
     chrome.runtime.sendMessage({ 
       action: "openWhatsApp",
       numberOfChats: numberOfChats,
       includeMedia: exportType === 'media'
     });
+
     const messageHandler = (message) => {
       switch (message.action) {
         case "loadingProgress":
@@ -37,16 +41,26 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
           if (statusText && message.status) {
             statusText.textContent = message.status;
           }
-          if (message.progress === 100) {
+          break;
+        case "chatProgress":
+          const chatProgress = message.progress || 0;
+          loadingFill.style.width = `${chatProgress}%`;
+          if (statusText && message.chatTitle) {
+            statusText.textContent = `Downloading chat: ${message.chatTitle}`;
+          }
+          if (chatProgress === 100) {
             handleCompletion();
           }
           break;
         case "mediaProgress":
-          const progress = message.progress || 0;
-          loadingFill.style.width = `${progress}%`;
+          const mediaProgress = message.progress || 0;
+          loadingFill.style.width = `${mediaProgress}%`;
           if (statusText && message.chat) {
             statusText.textContent = `Processing ${message.chat}: ${message.mediaCount} media items found`;
           }
+          break;
+        case "exportComplete":
+          handleCompletion();
           break;
         case "mediaDownloadComplete":
           handleCompletion();
@@ -58,6 +72,7 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
     };
     
     const handleCompletion = () => {
+      loadingFill.style.width = '100%';
       completionMessage.classList.add('show');
       playNotificationSound();
       setTimeout(() => {

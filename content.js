@@ -229,6 +229,35 @@ const extractMediaContent = async (chatTitle) => {
     return mediaItems;
 };
 
+const extractAndDownloadChat = async (chatTitle) => {
+    const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+    let content = '';
+    log(`Found ${messages.length} messages to extract from ${chatTitle}`);
+    messages.forEach((msg, index) => {
+        const text = msg.querySelector(SELECTORS.MESSAGE.text);
+        const timestamp = msg.querySelector(SELECTORS.MESSAGE.timestamp);
+        if (text) {
+            const time = timestamp ? timestamp.textContent.trim() : '';
+            const msgText = text.textContent.trim();
+            content += time ? `[${time}] ${msgText}\n` : `${msgText}\n`;
+            if (index % 100 === 0) {
+                log(`Processed ${index} messages...`);
+            }
+        }
+    });
+    const safeTitle = chatTitle.replace(/[^a-z0-9]/gi, '_');
+    const filename = `${safeTitle}_chat.txt`;
+    const blob = new Blob([`Chat with: ${chatTitle}\n\n${content}`], { type: 'text/plain' });
+    chrome.runtime.sendMessage({
+        action: "downloadChat",
+        data: {
+            url: URL.createObjectURL(blob),
+            filename: filename
+        }
+    });
+    return filename;
+};
+
 
 async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
     try {
@@ -238,7 +267,6 @@ async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
         log('Chat list container loaded');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 20 });
         const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
-        const allContents = [];
         const exportedChats = Math.min(clickableChats.length, numberOfChats);
         for (let i = 0; i < exportedChats; i++) {
             const clickableChat = clickableChats[i];
@@ -247,35 +275,29 @@ async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
             simulateClick(clickableChat);
             await waitForElement(SELECTORS.CHAT.messageContainer);
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
-            const textContent = extractChatContent();
-            let mediaContent = [];
+            const filename = await extractAndDownloadChat(chatTitle);
+            log(`Downloaded chat: ${filename}`);
             if (includeMedia) {
                 await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
-                mediaContent = await extractMediaContent(chatTitle);
+                await extractMediaContent(chatTitle);
             }
-            allContents.push({
-                title: chatTitle,
-                content: textContent,
-                media: includeMedia ? mediaContent : []
-            });
-            log(`Extracted content from: ${chatTitle}`);
             chrome.runtime.sendMessage({ 
-                action: "loadingProgress", 
-                progress: 20 + (60 * ((i + 1) / clickableChats.length)) 
+                action: "chatProgress", 
+                progress: Math.round((i + 1) / exportedChats * 100),
+                chatTitle: chatTitle 
             });
         }
-        chrome.runtime.sendMessage({
-            action: "processChats",
-            chats: allContents
-        });
         log('Export completed successfully');
-        chrome.runtime.sendMessage({ action: "loadingProgress", progress: 100 });
+        chrome.runtime.sendMessage({ 
+            action: "exportComplete",
+            message: `Successfully exported ${exportedChats} chats`
+        });
     } catch (error) {
         log(`Error during automation: ${error.message}`);
         chrome.runtime.sendMessage({
             action: "automationError",
             error: error.message
-        }).catch(() => {});
+        });
     }
 }
 
@@ -322,7 +344,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case "ping":
             sendResponse({ status: 'ready', initialized: isInitialized });
             break;
-            
         case "startAutomation":
             if (!isInitialized) {
                 sendResponse({ error: 'Content script not initialized' });
