@@ -11,11 +11,13 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
     const resetTask = () => {      
       loadingFill.style.transition = 'none';
       loadingFill.style.width = '0%';
+      loadingFill.style.opacity = '0.1'; // Reset opacity
       completionMessage.classList.remove('show');
       if (statusText) statusText.textContent = '';
       loadingFill.offsetHeight; // Force reflow
-      loadingFill.style.transition = 'width 1.5s ease';
+      loadingFill.style.transition = 'all 1.5s ease'; // Transition for both width and opacity
     };
+
     if (loadingFill.style.width === '100%' || completionMessage.classList.contains('show')) {
       resetTask();
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -23,7 +25,11 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
 
     const buttons = taskGroup.querySelectorAll('.chat-button');
     buttons.forEach(btn => btn.disabled = true);
+    
+    // Start loading state
+    loadingFill.style.opacity = '0.1'; // Set initial opacity
     loadingFill.style.width = '20%';
+    
     const originalTaskName = taskName.textContent;
     const actionText = exportType === 'media' ? 'Downloading photos from' : 'Downloading';
     taskName.textContent = `${actionText} ${numberOfChats} ${numberOfChats === 1 ? 'chat' : 'chats'}...`;
@@ -73,6 +79,8 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
     
     const handleCompletion = () => {
       loadingFill.style.width = '100%';
+      // Fade out the loading fill
+      loadingFill.style.opacity = '0';
       completionMessage.classList.add('show');
       playNotificationSound();
       setTimeout(() => {
@@ -92,6 +100,10 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
       taskName.textContent = originalTaskName;
       completionMessage.classList.remove('show');
       if (statusText) statusText.textContent = '';
+      // Ensure loading fill is reset
+      loadingFill.style.transition = 'none';
+      loadingFill.style.width = '0%';
+      loadingFill.style.opacity = '0.1';
     };
 
     const playNotificationSound = () => {

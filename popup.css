@@ -1,21 +1,110 @@
 body {
   width: 300px;
-  height: 600px; /* Increased height for better spacing */
+  height: 600px;
   margin: 0;
-  padding: 24px; /* Slightly more padding */
+  padding: 16px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: #ece5dd;
   background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='none' stroke='%23dededc' stroke-width='1' d='M10 20c5-8 15-3 20 5s2 20-5 25M80 20c-5 10-15 15-25 10M30 70c10-5 20 0 25 10M70 80c-10 5-20-2-25-10M50 30c5 10 5 20 0 30'/%3E%3C/svg%3E");
-  overflow-y: auto;
   box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+}
+.loading-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 0%;
+  height: 100%;
+  background: #075e54;
+  opacity: 0.1;
+  transition: all 1.5s ease;
+  z-index: 0;
+}
+/* Glow Effect */
+/* Glow Effect */
+body::after {
+  content: '';
+  position: fixed;
+  bottom: -100px;  /* Moved further down */
+  left: -100px;    /* Moved further left */
+  width: 300px;    /* Increased size */
+  height: 300px;   /* Increased size */
+  background: radial-gradient(
+    circle,
+    rgba(255, 153, 0, 0.5) 0%,    /* Increased opacity */
+    rgba(255, 153, 0, 0.4) 20%,   /* Increased opacity */
+    rgba(255, 153, 0, 0.3) 40%,   /* Increased opacity */
+    rgba(255, 153, 0, 0.2) 60%,   /* Increased opacity */
+    rgba(255, 153, 0, 0.1) 80%,   /* Added extra step */
+    transparent 100%
+  );
+  filter: blur(30px);  /* Increased blur */
+  animation: glowPulse 4s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes glowPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;  /* Increased base opacity */
+  }
+  50% {
+    transform: scale(1.3);  /* Increased scale */
+    opacity: 1;    /* Full opacity at peak */
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.8;  /* Increased base opacity */
+  }
+}
+
+
+
+/* Add granular texture to the glow */
+body::before {
+  content: '';
+  position: fixed;
+  bottom: -50px;
+  left: -50px;
+  width: 200px;
+  height: 200px;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 1;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  z-index: 1;
+  animation: grainShift 8s linear infinite;
+}
+
+@keyframes grainShift {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  25% {
+    transform: translate(10px, -10px) scale(1.1);
+  }
+  50% {
+    transform: translate(0, 0) scale(1);
+  }
+  75% {
+    transform: translate(-10px, 10px) scale(0.9);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
 }
 
 .container {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
-  gap: 40px; /* Increased gap for better section separation */
-  height: 100%;
+  align-items: center;
+  gap: 20px;
 }
+
 
 .header {
   display: flex;
