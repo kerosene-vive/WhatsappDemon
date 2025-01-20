@@ -14,8 +14,20 @@ const STATES = {
 };
 
 const log = (msg) => console.log(`[WhatsApp Exporter] ${msg}`);
-
 const tabStates = new Map();
+let whatsappTabId = null;
+
+chrome.runtime.onConnect.addListener((port) => {
+    if (port.name === 'cleanup') {
+        port.onDisconnect.addListener(() => {
+            if (whatsappTabId) {
+                chrome.tabs.remove(whatsappTabId)
+                    .then(() => log('WhatsApp tab closed on extension shutdown'))
+                    .catch(error => log(`Error closing tab: ${error.message}`));
+            }
+        });
+    }
+});
 
 chrome.runtime.onInstalled.addListener(() => {
     log('Extension installed');
@@ -43,6 +55,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case "contentScriptReady":
             if (sender.tab) {
                 tabStates.set(sender.tab.id, STATES.READY);
+                whatsappTabId = sender.tab.id;
                 log(`Content script ready in tab ${sender.tab.id}`);
                 sendResponse({ status: 'acknowledged' });
             }
@@ -52,18 +65,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             chrome.runtime.sendMessage(request).catch(() => {});
             break;
         case "downloadChat":
-                if (request.data) {
-                    chrome.downloads.download({
-                        url: request.data.url,
-                        filename: request.data.filename,
-                        saveAs: false
-                    }).catch(error => log(`Chat download error: ${error.message}`));
-                }
-                break;
-            case "chatProgress":
-            case "exportComplete":
-                chrome.runtime.sendMessage(request).catch(() => {});
-                break;
+            if (request.data) {
+                chrome.downloads.download({
+                    url: request.data.url,
+                    filename: request.data.filename,
+                    saveAs: false
+                }).catch(error => log(`Chat download error: ${error.message}`));
+            }
+            break;
+        case "chatProgress":
+        case "exportComplete":
+            chrome.runtime.sendMessage(request).catch(() => {});
+            break;
         case "downloadMedia":
             if (request.data) {
                 chrome.downloads.download({
@@ -82,6 +95,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
     tabStates.delete(tabId);
+    if (whatsappTabId === tabId) {
+        whatsappTabId = null;
+    }
 });
 
 

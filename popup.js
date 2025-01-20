@@ -1,3 +1,5 @@
+const cleanupPort = chrome.runtime.connect({ name: 'cleanup' });
+
 document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
   button.addEventListener('click', async function() {
     const numberOfChats = parseInt(this.dataset.chats);
