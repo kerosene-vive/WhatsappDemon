@@ -271,6 +271,8 @@ const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) =>
 };
 
 const extractMediaContent = async (chatTitle) => {
+    scrollChatToTop();
+    await new Promise(resolve => setTimeout(resolve, 6000));
     const mediaItems = [];
     log('Starting media extraction');
     const images = document.querySelectorAll(SELECTORS.MEDIA.image);
