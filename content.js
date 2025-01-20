@@ -28,8 +28,66 @@ const SELECTORS = {
         gridCell: '[role="gridcell"]',
         clickableArea: '._ak8q',
         title: 'span[dir="auto"]',
-        item: 'div._ak8l'
+        item: 'div._ak8l',
+        // Update scroll container selector to match actual WhatsApp structure
+        scrollContainer: 'div[tabindex="0"][role="application"]'
     }
+};
+
+// Update scrollChatToTop function to add more logging
+// Update scrollChatToTop function with incremental scrolling
+const scrollChatToTop = async () => {
+    log('Starting to scroll chat history');
+    const scrollContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
+    
+    if (!scrollContainer) {
+        log('Could not find scroll container');
+        return;
+    }
+    
+    log('Found scroll container, starting scroll');
+    let lastMessageCount = 0;
+    let unchangedCount = 0;
+    const maxAttempts = 4;
+    
+    for (let i = 0; i < maxAttempts; i++) {
+        // Find first message
+        const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+        const firstMessage = messages[0];
+
+        if (!firstMessage) {
+            log('No messages found');
+            break;
+        }
+
+        // Get current message count
+        const currentCount = messages.length;
+        log(`Scroll attempt ${i + 1}, current messages: ${currentCount}`);
+        
+        // Scroll to first message
+        firstMessage.scrollIntoView({ behavior: "auto", block: "center" });
+        
+        // More aggressive scroll upward
+        scrollContainer.scrollTop -= 5000;
+        
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        if (currentCount === lastMessageCount) {
+            unchangedCount++;
+            if (unchangedCount >= 3) {
+                log('No more messages loading, stopping scroll');
+                break;
+            }
+        } else {
+            unchangedCount = 0;
+            lastMessageCount = currentCount;
+            log(`New messages loaded, total: ${currentCount}`);
+        }
+    }
+    
+    // Wait a bit longer after scrolling completes
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    log('Finished scrolling');
 };
 
 const TIMEOUTS = {
@@ -38,7 +96,9 @@ const TIMEOUTS = {
     MESSAGE_LOAD: 2000,
     MEDIA_LOAD: 3000,
     INIT_RETRY: 1000,
-    DOWNLOAD_WAIT: 1000
+    DOWNLOAD_WAIT: 1000,
+    SCROLL_INTERVAL: 800,
+    SCROLL_ATTEMPTS: 50  // Number of scroll attempts to make
 };
 
 const MIME_TYPES = {
@@ -259,6 +319,11 @@ const extractAndDownloadChat = async (chatTitle) => {
 };
 
 
+// Add this simple scroll function
+// Add to SELECTORS object at the top
+
+
+// Modify the automateWhatsAppExport function to include scrolling
 async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
     try {
         log('Starting automation');
@@ -268,25 +333,36 @@ async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 20 });
         const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
         const exportedChats = Math.min(clickableChats.length, numberOfChats);
+        
         for (let i = 0; i < exportedChats; i++) {
             const clickableChat = clickableChats[i];
             const chatTitle = chatTitles[i];
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(clickableChat);
+            
+            // Wait for chat to load
             await waitForElement(SELECTORS.CHAT.messageContainer);
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
+            
+            // Scroll to load history - call scrollChatToTop without arguments
+            await scrollChatToTop();
+            
+            // Extract and download
             const filename = await extractAndDownloadChat(chatTitle);
             log(`Downloaded chat: ${filename}`);
+            
             if (includeMedia) {
                 await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
                 await extractMediaContent(chatTitle);
             }
+            
             chrome.runtime.sendMessage({ 
                 action: "chatProgress", 
                 progress: Math.round((i + 1) / exportedChats * 100),
                 chatTitle: chatTitle 
             });
         }
+        
         log('Export completed successfully');
         chrome.runtime.sendMessage({ 
             action: "exportComplete",
