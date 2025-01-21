@@ -1,18 +1,15 @@
-// background.js
 const TIMEOUTS = {
     SCRIPT_INIT: 2000,
     WHATSAPP_LOAD: 5000,
     CONNECTION_RETRY: 1000,
     MAX_RETRIES: 5
 };
-
 const STATES = {
     INITIAL: 'initial',
     LOADING: 'loading',
     READY: 'ready',
     ERROR: 'error'
 };
-
 const log = (msg) => console.log(`[WhatsApp Exporter] ${msg}`);
 const tabStates = new Map();
 let whatsappTabId = null;

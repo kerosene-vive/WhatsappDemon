@@ -9,7 +9,6 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
     const completionMessage = taskGroup.querySelector('.completion-message');
     const taskName = taskGroup.querySelector('.task-name');
     const statusText = taskGroup.querySelector('.status-text');
-
     const resetTask = () => {      
       loadingFill.style.transition = 'none';
       loadingFill.style.width = '0%';
@@ -19,29 +18,22 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
       loadingFill.offsetHeight; // Force reflow
       loadingFill.style.transition = 'all 1.5s ease'; // Transition for both width and opacity
     };
-
     if (loadingFill.style.width === '100%' || completionMessage.classList.contains('show')) {
       resetTask();
       await new Promise(resolve => setTimeout(resolve, 300));
     }
-
     const buttons = taskGroup.querySelectorAll('.chat-button');
     buttons.forEach(btn => btn.disabled = true);
-    
-    // Start loading state
     loadingFill.style.opacity = '0.1'; // Set initial opacity
     loadingFill.style.width = '20%';
-    
     const originalTaskName = taskName.textContent;
     const actionText = exportType === 'media' ? 'Downloading photos from' : 'Downloading';
     taskName.textContent = `${actionText} ${numberOfChats} ${numberOfChats === 1 ? 'chat' : 'chats'}...`;
-
     chrome.runtime.sendMessage({ 
       action: "openWhatsApp",
       numberOfChats: numberOfChats,
       includeMedia: exportType === 'media'
     });
-
     const messageHandler = (message) => {
       switch (message.action) {
         case "loadingProgress":
@@ -78,7 +70,6 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
           break;
       }
     };
-    
     const handleCompletion = () => {
       loadingFill.style.width = '100%';
       // Fade out the loading fill
@@ -90,31 +81,26 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
       }, 2000);
       chrome.runtime.onMessage.removeListener(messageHandler);
     };
-
     const handleError = () => {
       resetUIState();
       if (statusText) statusText.textContent = 'Error occurred. Please try again.';
       chrome.runtime.onMessage.removeListener(messageHandler);
     };
-
     const resetUIState = () => {
       buttons.forEach(btn => btn.disabled = false);
       taskName.textContent = originalTaskName;
       completionMessage.classList.remove('show');
       if (statusText) statusText.textContent = '';
-      // Ensure loading fill is reset
       loadingFill.style.transition = 'none';
       loadingFill.style.width = '0%';
       loadingFill.style.opacity = '0.1';
     };
-
     const playNotificationSound = () => {
       const audio = document.getElementById('notificationSound');
       if (audio) {
         audio.play().catch(error => console.log('Error playing sound:', error));
       }
     };
-
     chrome.runtime.onMessage.addListener(messageHandler);
   });
 });
