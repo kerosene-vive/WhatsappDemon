@@ -41,8 +41,6 @@
   "content_scripts": [{
     "matches": ["https://web.whatsapp.com/*"],
     "js": [
-      "lib/jspdf.umd.min.js",
-      "lib/jszip.min.js",
       "content.js"
     ]
   }],

@@ -74,9 +74,9 @@ const scrollChatToTop = async () => {
 
 const TIMEOUTS = {
     LOAD: 5000,
-    CHAT_SELECT: 200,
-    MESSAGE_LOAD: 200,
-    MEDIA_LOAD: 300,
+    CHAT_SELECT: 1100,
+    MESSAGE_LOAD: 1000,
+    MEDIA_LOAD: 1000,
     INIT_RETRY: 100,
     DOWNLOAD_WAIT: 100,
     SCROLL_INTERVAL: 80,
