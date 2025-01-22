@@ -43,7 +43,7 @@ const scrollChatToTop = async () => {
     log('Found scroll container, starting scroll');
     let lastMessageCount = 0;
     let unchangedCount = 0;
-    const maxAttempts = 4;
+    const maxAttempts = 5;
     for (let i = 0; i < maxAttempts; i++) {
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
         const firstMessage = messages[0];
@@ -55,7 +55,7 @@ const scrollChatToTop = async () => {
         log(`Scroll attempt ${i + 1}, current messages: ${currentCount}`);
         firstMessage.scrollIntoView({ behavior: "auto", block: "center" });
         scrollContainer.scrollTop -= 5000;
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, 500));
         if (currentCount === lastMessageCount) {
             unchangedCount++;
             if (unchangedCount >= 3) {
@@ -74,12 +74,12 @@ const scrollChatToTop = async () => {
 
 const TIMEOUTS = {
     LOAD: 5000,
-    CHAT_SELECT: 2000,
-    MESSAGE_LOAD: 2000,
-    MEDIA_LOAD: 3000,
-    INIT_RETRY: 1000,
-    DOWNLOAD_WAIT: 1000,
-    SCROLL_INTERVAL: 800,
+    CHAT_SELECT: 200,
+    MESSAGE_LOAD: 200,
+    MEDIA_LOAD: 300,
+    INIT_RETRY: 100,
+    DOWNLOAD_WAIT: 100,
+    SCROLL_INTERVAL: 80,
     SCROLL_ATTEMPTS: 50  // Number of scroll attempts to make
 };
 
