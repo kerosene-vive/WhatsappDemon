@@ -33,6 +33,35 @@ const SELECTORS = {
     }
 };
 
+const TIMEOUTS = {
+    LOAD: 5000,
+    CHAT_SELECT: 1100,
+    MESSAGE_LOAD: 1000,
+    MEDIA_LOAD: 1000,
+    INIT_RETRY: 100,
+    DOWNLOAD_WAIT: 100,
+    SCROLL_INTERVAL: 80,
+    SCROLL_ATTEMPTS: 50
+};
+
+const MIME_TYPES = {
+    IMAGE: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+    VIDEO: ['video/mp4', 'video/webm'],
+    DOCUMENT: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+};
+
+const log = (msg) => {
+    console.log(`[WhatsApp Export] ${msg}`);
+    try {
+        chrome.runtime.sendMessage({ 
+            action: "debugLog", 
+            message: msg 
+        });
+    } catch (e) {
+        console.error('Logging failed:', e);
+    }
+};
+
 const scrollChatToTop = async () => {
     log('Starting to scroll chat history');
     const scrollContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
@@ -70,35 +99,6 @@ const scrollChatToTop = async () => {
     }
     await new Promise(resolve => setTimeout(resolve, 3000));
     log('Finished scrolling');
-};
-
-const TIMEOUTS = {
-    LOAD: 5000,
-    CHAT_SELECT: 1100,
-    MESSAGE_LOAD: 1000,
-    MEDIA_LOAD: 1000,
-    INIT_RETRY: 100,
-    DOWNLOAD_WAIT: 100,
-    SCROLL_INTERVAL: 80,
-    SCROLL_ATTEMPTS: 50  // Number of scroll attempts to make
-};
-
-const MIME_TYPES = {
-    IMAGE: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-    VIDEO: ['video/mp4', 'video/webm'],
-    DOCUMENT: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-};
-
-const log = (msg) => {
-    console.log(`[WhatsApp Export] ${msg}`);
-    try {
-        chrome.runtime.sendMessage({ 
-            action: "debugLog", 
-            message: msg 
-        });
-    } catch (e) {
-        console.error('Logging failed:', e);
-    }
 };
 
 const verifyEnvironment = () => {
