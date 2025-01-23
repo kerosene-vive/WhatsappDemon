@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WhatsApp Demon</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <audio id="notificationSound" src="notification.wav" preload="auto"></audio>
+    <div class="container">
+        <div class="header">
+            <img src="icons/header.png" alt="Assistant Icon" class="header-icon">
+            <div class="header-text">WhatsApp Demon</div>
+        </div>
+        <div class="task-group" id="text-export">
+            <div class="loading-fill"></div>
+            <div class="task-content">
+                <div class="task-name">Download Chats</div>
+                <div class="status-text"></div>
+                <div class="button-group">
+                    <button class="chat-button" data-chats="1" data-type="text">1 Chat</button>
+                    <button class="chat-button" data-chats="10" data-type="text">10 Chats</button>
+                    <button class="chat-button" data-chats="20" data-type="text">20 Chats</button>
+                </div>
+                <div class="completion-message">Download Complete! ✓</div>
+            </div>
+        </div>
+        <div class="task-group" id="photo-export">
+            <div class="loading-fill"></div>
+            <div class="task-content">
+                <div class="task-name">Download Photos</div>
+                <div class="status-text"></div>
+                <div class="button-group">
+                    <button class="chat-button" data-chats="1" data-type="media" data-media-type="photo">1 Chat</button>
+                    <button class="chat-button" data-chats="10" data-type="media" data-media-type="photo">10 Chats</button>
+                    <button class="chat-button" data-chats="20" data-type="media" data-media-type="photo">20 Chats</button>
+                </div>
+                <div class="completion-message">Download Complete! ✓</div>
+            </div>
+        </div>
+        <div class="task-group coming-soon" id="future-features">
+            <div class="task-content">
+                <div class="task-name">Coming Soon..</div>
+                <div class="button-group">
+                    <button class="chat-button disabled" disabled>Videos</button>
+                    <button class="chat-button disabled" disabled>Files</button>
+                    <button class="chat-button disabled" disabled>Links</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>

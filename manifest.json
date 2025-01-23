@@ -19,7 +19,7 @@
     "sidePanel"
   ],
   "side_panel": {
-    "default_path": "popup.html"
+    "default_path": "sidepanel.html"
   },
   "action": {
     "default_popup": "popup.html",
@@ -35,9 +35,8 @@
     "https://web.whatsapp.com/*"
   ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
-  },
+    "service_worker": "background.js"
+   },
   "content_scripts": [{
     "matches": ["https://web.whatsapp.com/*"],
     "js": [

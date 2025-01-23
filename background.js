@@ -26,15 +26,11 @@ chrome.runtime.onConnect.addListener((port) => {
     }
 });
 
-chrome.runtime.onInstalled.addListener(() => {
-    log('Extension installed');
-    chrome.sidePanel
-        .setOptions({
-            path: 'popup.html',
-            enabled: true
-        })
-        .catch(error => log(`Sidepanel setup error: ${error.message}`));
-});
+
+chrome.sidePanel
+  .setPanelBehavior({ openPanelOnActionClick: true })
+  .catch((error) => console.error(error));
+
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     log(`Received message: ${request.action}`);
