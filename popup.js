@@ -27,8 +27,6 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
     loadingFill.style.opacity = '0.1'; // Set initial opacity
     loadingFill.style.width = '20%';
     const originalTaskName = taskName.textContent;
-    const actionText = exportType === 'media' ? 'Downloading photos from' : 'Downloading';
-    taskName.textContent = `${actionText} ${numberOfChats} ${numberOfChats === 1 ? 'chat' : 'chats'}...`;
     chrome.runtime.sendMessage({ 
       action: "openWhatsApp",
       numberOfChats: numberOfChats,
@@ -37,27 +35,14 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
     const messageHandler = (message) => {
       switch (message.action) {
         case "loadingProgress":
-          loadingFill.style.width = `${message.progress}%`;
-          if (statusText && message.status) {
-            statusText.textContent = message.status;
-          }
           break;
         case "chatProgress":
           const chatProgress = message.progress || 0;
-          loadingFill.style.width = `${chatProgress}%`;
-          if (statusText && message.chatTitle) {
-            statusText.textContent = `Downloading chat: ${message.chatTitle}`;
-          }
           if (chatProgress === 100) {
             handleCompletion();
           }
           break;
         case "mediaProgress":
-          const mediaProgress = message.progress || 0;
-          loadingFill.style.width = `${mediaProgress}%`;
-          if (statusText && message.chat) {
-            statusText.textContent = `Processing ${message.chat}: ${message.mediaCount} media items found`;
-          }
           break;
         case "exportComplete":
           handleCompletion();
