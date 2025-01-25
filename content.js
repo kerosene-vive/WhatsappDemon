@@ -40,8 +40,8 @@ const TIMEOUTS = {
     MEDIA_LOAD: 1000,
     INIT_RETRY: 100,
     DOWNLOAD_WAIT: 100,
-    SCROLL_INTERVAL: 80,
-    SCROLL_ATTEMPTS: 50
+    SCROLL_INTERVAL: 100,
+    SCROLL_ATTEMPTS: 100
 };
 
 const MIME_TYPES = {
@@ -72,7 +72,7 @@ const scrollChatToTop = async () => {
     log('Found scroll container, starting scroll');
     let lastMessageCount = 0;
     let unchangedCount = 0;
-    const maxAttempts = 5;
+    const maxAttempts = 30;
     for (let i = 0; i < maxAttempts; i++) {
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
         const firstMessage = messages[0];
@@ -83,8 +83,8 @@ const scrollChatToTop = async () => {
         const currentCount = messages.length;
         log(`Scroll attempt ${i + 1}, current messages: ${currentCount}`);
         firstMessage.scrollIntoView({ behavior: "auto", block: "center" });
-        scrollContainer.scrollTop -= 5000;
-        await new Promise(resolve => setTimeout(resolve, 500));
+        scrollContainer.scrollTop -= 10000;
+        await new Promise(resolve => setTimeout(resolve, 400));
         if (currentCount === lastMessageCount) {
             unchangedCount++;
             if (unchangedCount >= 3) {
