@@ -84,7 +84,7 @@ const scrollChatToTop = async () => {
         log(`Scroll attempt ${i + 1}, current messages: ${currentCount}`);
         firstMessage.scrollIntoView({ behavior: "auto", block: "center" });
         scrollContainer.scrollTop -= 10000;
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 400));
         if (currentCount === lastMessageCount) {
             unchangedCount++;
             if (unchangedCount >= 3) {
