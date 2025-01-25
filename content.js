@@ -253,6 +253,7 @@ const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) =>
 };
 
 const extractMediaContent = async (chatTitle) => {
+    await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
     scrollChatToTop();
     await new Promise(resolve => setTimeout(resolve, 6000));
     const mediaItems = [];
@@ -274,6 +275,8 @@ const extractMediaContent = async (chatTitle) => {
 };
 
 const extractAndDownloadChat = async (chatTitle) => {
+    await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
+    await scrollChatToTop();
     const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
     let content = '';
     log(`Found ${messages.length} messages to extract from ${chatTitle}`);
@@ -312,26 +315,29 @@ async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 20 });
         const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
         const exportedChats = Math.min(clickableChats.length, numberOfChats);
+        
         for (let i = 0; i < exportedChats; i++) {
             const clickableChat = clickableChats[i];
             const chatTitle = chatTitles[i];
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(clickableChat);
             await waitForElement(SELECTORS.CHAT.messageContainer);
-            await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
-            await scrollChatToTop();
-            const filename = await extractAndDownloadChat(chatTitle);
-            log(`Downloaded chat: ${filename}`);            
+            
+            let filename;
             if (includeMedia) {
-                await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
                 await extractMediaContent(chatTitle);
-            }       
+            } else {
+                filename = await extractAndDownloadChat(chatTitle);
+                log(`Downloaded chat: ${filename}`);
+            }
+            
             chrome.runtime.sendMessage({ 
                 action: "chatProgress", 
                 progress: Math.round((i + 1) / exportedChats * 100),
                 chatTitle: chatTitle 
             });
         }
+        
         log('Export completed successfully');
         chrome.runtime.sendMessage({ 
             action: "exportComplete",
