@@ -251,6 +251,7 @@ const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) =>
         }
     });
 };
+
 const extractMediaContent = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
  
@@ -268,23 +269,43 @@ const extractMediaContent = async (chatTitle) => {
     if (!mediaLink) throw new Error('Could not find Media section');
     simulateClick(mediaLink);
     
-    await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
+    // Wait longer for media grid to load
+    await new Promise(resolve => setTimeout(resolve, 3000));
     const mediaItems = [];
-    const images = document.querySelectorAll('img[src^="blob:"]') || [];
-    
+ 
+    const mediaDivs = document.querySelectorAll('div.x1xsqp64.x18d0r48');
+    if (!mediaDivs.length) throw new Error('No media items found');
+ 
     let index = 1;
-    for (const img of images) {
+    for (const div of mediaDivs) {
         try {
-            await downloadMedia(img, 'image/jpeg', null, chatTitle, index++);
-            mediaItems.push({ type: 'image' });
+            const style = div.style.backgroundImage;
+            if (!style || !style.includes('blob:')) continue;
+            
+            const blobUrl = style.match(/blob:([^"]*)/)[0];
+            const response = await fetch(blobUrl);
+            const blob = await response.blob();
+            
+            const filename = `photo_${chatTitle}${index}${blob.type.includes('video') ? '.mp4' : '.jpg'}`;
+            chrome.runtime.sendMessage({
+                action: "downloadMedia",
+                data: {
+                    url: URL.createObjectURL(blob),
+                    filename: filename,
+                    type: blob.type
+                }
+            });
+            mediaItems.push({ type: blob.type.includes('video') ? 'video' : 'image' });
+            log(`Downloaded media item ${index}`);
+            index++;
         } catch (error) {
-            log(`Error downloading image: ${error.message}`);
+            log(`Error downloading media item ${index}: ${error.message}`);
         }
     }
     
     return mediaItems;
  };
-
+ 
 const extractAndDownloadChat = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
     await scrollChatToTop();
