@@ -72,7 +72,7 @@ const scrollChatToTop = async () => {
     log('Found scroll container, starting scroll');
     let lastMessageCount = 0;
     let unchangedCount = 0;
-    const maxAttempts = 10;
+    const maxAttempts = 30;
     for (let i = 0; i < maxAttempts; i++) {
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
         const firstMessage = messages[0];
