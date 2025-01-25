@@ -254,36 +254,22 @@ const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) =>
 
 const extractMediaContent = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
- 
-    // Open menu
     const menuButton = document.querySelector('.xr9ek0c');
     if (!menuButton) throw new Error('Could not find menu button');
     simulateClick(menuButton);
-    
-    // Simulate keyboard Enter on first menu item
     await new Promise(resolve => setTimeout(resolve, 1000));
-    const firstMenuItem = document.querySelector('div[role="button"]');
-    if (!firstMenuItem) throw new Error('Could not find info option');
-    firstMenuItem.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        bubbles: true
-    }));
-    
+    const infoButton = document.querySelector('div[aria-label*="info"]');
+    if (!infoButton) throw new Error('Could not find info button');
+    simulateClick(infoButton);
     await new Promise(resolve => setTimeout(resolve, 1000));
-    const mediaSections = document.querySelectorAll('div[role="button"]');
-    const mediaButton = Array.from(mediaSections)
-        .find(el => el.textContent.toLowerCase().includes('media'));
-    if (!mediaButton) throw new Error('Could not find Media section');
-    simulateClick(mediaButton);
-    
+    const mediaSection = Array.from(document.querySelectorAll('div[role="row"]'))
+        .find(el => el.textContent.includes('Media, links and docs'));
+    if (!mediaSection) throw new Error('Could not find Media section');
+    simulateClick(mediaSection);
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
     const mediaItems = [];
-    
     const images = document.querySelectorAll('img[src^="blob:"]') || [];
     let index = 1;
-    
     for (const img of images) {
         try {
             await downloadMedia(img, 'image/jpeg', null, chatTitle, index++);
@@ -292,10 +278,8 @@ const extractMediaContent = async (chatTitle) => {
             log(`Error downloading image: ${error.message}`);
         }
     }
-    
     return mediaItems;
  };
-
 
 const extractAndDownloadChat = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
