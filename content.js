@@ -251,24 +251,27 @@ const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) =>
         }
     });
 };
-
 const extractMediaContent = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
+ 
     const menuButton = document.querySelector('.xr9ek0c');
     if (!menuButton) throw new Error('Could not find menu button');
     simulateClick(menuButton);
+    
     await new Promise(resolve => setTimeout(resolve, 1000));
     const infoButton = document.querySelector('div[aria-label*="info"]');
     if (!infoButton) throw new Error('Could not find info button');
     simulateClick(infoButton);
+    
     await new Promise(resolve => setTimeout(resolve, 1000));
-    const mediaSection = Array.from(document.querySelectorAll('div[role="row"]'))
-        .find(el => el.textContent.includes('Media, links and docs'));
-    if (!mediaSection) throw new Error('Could not find Media section');
-    simulateClick(mediaSection);
+    const mediaLink = document.querySelector('div.x12lumcd span.x1xhoq4m');
+    if (!mediaLink) throw new Error('Could not find Media section');
+    simulateClick(mediaLink);
+    
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
     const mediaItems = [];
     const images = document.querySelectorAll('img[src^="blob:"]') || [];
+    
     let index = 1;
     for (const img of images) {
         try {
@@ -278,6 +281,7 @@ const extractMediaContent = async (chatTitle) => {
             log(`Error downloading image: ${error.message}`);
         }
     }
+    
     return mediaItems;
  };
 
