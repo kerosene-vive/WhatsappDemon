@@ -266,15 +266,20 @@ const extractMediaContent = async (chatTitle) => {
     
     await new Promise(resolve => setTimeout(resolve, 1000));
     const mediaLink = document.querySelector('div.x12lumcd span.x1xhoq4m');
-    if (!mediaLink) throw new Error('Could not find Media section');
+    if (!mediaLink) {
+        log('No media section found, continuing...');
+        return [];
+    }
     simulateClick(mediaLink);
     
-    // Wait longer for media grid to load
     await new Promise(resolve => setTimeout(resolve, 3000));
     const mediaItems = [];
  
     const mediaDivs = document.querySelectorAll('div.x1xsqp64.x18d0r48');
-    if (!mediaDivs.length) throw new Error('No media items found');
+    if (!mediaDivs.length) {
+        log('No media items found, continuing...');
+        return [];
+    }
  
     let index = 1;
     for (const div of mediaDivs) {
@@ -305,7 +310,7 @@ const extractMediaContent = async (chatTitle) => {
     
     return mediaItems;
  };
- 
+
 const extractAndDownloadChat = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
     await scrollChatToTop();
