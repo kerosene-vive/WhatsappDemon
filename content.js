@@ -1,7 +1,6 @@
 let isInitialized = false;
 let initializationAttempts = 0;
 const MAX_INIT_ATTEMPTS = 5;
-
 const SELECTORS = {
     CHAT_LIST: {
         container: '#pane-side',
@@ -32,7 +31,6 @@ const SELECTORS = {
         scrollContainer: 'div[tabindex="0"][role="application"]'
     }
 };
-
 const TIMEOUTS = {
     LOAD: 5000,
     CHAT_SELECT: 1100,
@@ -43,13 +41,11 @@ const TIMEOUTS = {
     SCROLL_INTERVAL: 100,
     SCROLL_ATTEMPTS: 100
 };
-
 const MIME_TYPES = {
     IMAGE: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
     VIDEO: ['video/mp4', 'video/webm'],
     DOCUMENT: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 };
-
 const log = (msg) => {
     console.log(`[WhatsApp Export] ${msg}`);
     try {
@@ -61,7 +57,6 @@ const log = (msg) => {
         console.error('Logging failed:', e);
     }
 };
-
 const scrollChatToTop = async () => {
     log('Starting to scroll chat history');
     const scrollContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
@@ -100,7 +95,6 @@ const scrollChatToTop = async () => {
     await new Promise(resolve => setTimeout(resolve, 3000));
     log('Finished scrolling');
 };
-
 const verifyEnvironment = () => {
     return new Promise((resolve, reject) => {
         if (!window.location.href.includes('web.whatsapp.com')) {
@@ -110,7 +104,6 @@ const verifyEnvironment = () => {
         resolve(true);
     });
 };
-
 const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => {
     return new Promise((resolve, reject) => {
         const existing = document.querySelector(selector);
@@ -137,7 +130,6 @@ const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => {
         }, timeout);
     });
 };
-
 const findTargetChat = (container) => {
     const clickableAreas = [];
     const titles = [];
@@ -165,7 +157,6 @@ const findTargetChat = (container) => {
     }
     return { clickableAreas, titles };
 };
-
 const simulateClick = (element) => {
     log('Simulating click on element');
     const rect = element.getBoundingClientRect();
@@ -205,7 +196,6 @@ const simulateClick = (element) => {
         element.dispatchEvent(event);
     });
 };
-
 const extractChatContent = () => {
     const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
     let content = '';
@@ -224,7 +214,6 @@ const extractChatContent = () => {
     });
     return content;
 };
-
 const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) => {
     return new Promise(async (resolve, reject) => {
         try {
@@ -251,19 +240,15 @@ const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) =>
         }
     });
 };
-
 const extractMediaContent = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
- 
     const menuButton = document.querySelector('.xr9ek0c');
     if (!menuButton) throw new Error('Could not find menu button');
     simulateClick(menuButton);
-    
     await new Promise(resolve => setTimeout(resolve, 1000));
     const infoButton = document.querySelector('div[aria-label*="info"]');
     if (!infoButton) throw new Error('Could not find info button');
     simulateClick(infoButton);
-    
     await new Promise(resolve => setTimeout(resolve, 1000));
     const mediaLink = document.querySelector('div.x12lumcd span.x1xhoq4m');
     if (!mediaLink) {
@@ -271,26 +256,21 @@ const extractMediaContent = async (chatTitle) => {
         return [];
     }
     simulateClick(mediaLink);
-    
     await new Promise(resolve => setTimeout(resolve, 3000));
     const mediaItems = [];
- 
     const mediaDivs = document.querySelectorAll('div.x1xsqp64.x18d0r48');
     if (!mediaDivs.length) {
         log('No media items found, continuing...');
         return [];
     }
- 
     let index = 1;
     for (const div of mediaDivs) {
         try {
             const style = div.style.backgroundImage;
             if (!style || !style.includes('blob:')) continue;
-            
             const blobUrl = style.match(/blob:([^"]*)/)[0];
             const response = await fetch(blobUrl);
             const blob = await response.blob();
-            
             const filename = `${chatTitle}-${index}${blob.type.includes('video') ? '.mp4' : '.jpg'}`;
             chrome.runtime.sendMessage({
                 action: "downloadMedia",
@@ -307,11 +287,9 @@ const extractMediaContent = async (chatTitle) => {
             log(`Error downloading media item ${index}: ${error.message}`);
         }
     }
-    
     return mediaItems;
  };
- 
- const extractAndDownloadChat = async (chatTitle) => {
+const extractAndDownloadChat = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
     await scrollChatToTop();
     const messages = document.querySelectorAll('div.message-in, div.message-out');
@@ -329,11 +307,9 @@ const extractMediaContent = async (chatTitle) => {
             const msgText = text.textContent.trim();
             const date = new Date().toLocaleDateString('en-GB');
             const sender = isOutgoing ? 'Me' : chatTitle;
-            
             content += `[${date} ${time}]  ${sender}:\n`;
             content += `>>> ${msgText}\n\n`;
             content += `-------------------------------------------\n\n`;
-            
             if (index % 100 === 0) {
                 log(`Processed ${index} messages...`);
             }
@@ -351,6 +327,7 @@ const extractMediaContent = async (chatTitle) => {
     return filename;
 };
 
+
 async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
     try {
         log('Starting automation');
@@ -360,14 +337,12 @@ async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 20 });
         const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
         const exportedChats = Math.min(clickableChats.length, numberOfChats);
-        
         for (let i = 0; i < exportedChats; i++) {
             const clickableChat = clickableChats[i];
             const chatTitle = chatTitles[i];
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(clickableChat);
             await waitForElement(SELECTORS.CHAT.messageContainer);
-            
             let filename;
             if (includeMedia) {
                 await extractMediaContent(chatTitle);
@@ -375,14 +350,12 @@ async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
                 filename = await extractAndDownloadChat(chatTitle);
                 log(`Downloaded chat: ${filename}`);
             }
-            
             chrome.runtime.sendMessage({ 
                 action: "chatProgress", 
                 progress: Math.round((i + 1) / exportedChats * 100),
                 chatTitle: chatTitle 
             });
         }
-        
         log('Export completed successfully');
         chrome.runtime.sendMessage({ 
             action: "exportComplete",
