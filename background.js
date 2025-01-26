@@ -141,6 +141,7 @@ async function handleWhatsAppTab(tab, numberOfChats, includeMedia = false, isNew
             throw new Error('Content script verification failed');
         }
         log('Starting automation');
+        log(includeMedia);
         await chrome.tabs.sendMessage(tab.id, { 
             action: includeMedia ? "startMediaDownload" : "startAutomation",
             numberOfChats: numberOfChats,
