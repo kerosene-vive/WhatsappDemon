@@ -328,7 +328,7 @@ const extractAndDownloadChat = async (chatTitle) => {
 };
 
 
-async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
+async function automateWhatsAppExport(numberOfChats = 1) {
     try {
         log('Starting automation');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 10 });
@@ -344,12 +344,8 @@ async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
             simulateClick(clickableChat);
             await waitForElement(SELECTORS.CHAT.messageContainer);
             let filename;
-            if (includeMedia) {
-                await extractMediaContent(chatTitle);
-            } else {
-                filename = await extractAndDownloadChat(chatTitle);
-                log(`Downloaded chat: ${filename}`);
-            }
+            filename = await extractAndDownloadChat(chatTitle);
+            log(`Downloaded chat: ${filename}`);
             chrome.runtime.sendMessage({ 
                 action: "chatProgress", 
                 progress: Math.round((i + 1) / exportedChats * 100),
