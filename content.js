@@ -254,47 +254,93 @@ const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) =>
 
 const extractMediaContent = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
-    scrollChatToTop();
-    await new Promise(resolve => setTimeout(resolve, 6000));
+ 
+    const menuButton = document.querySelector('.xr9ek0c');
+    if (!menuButton) throw new Error('Could not find menu button');
+    simulateClick(menuButton);
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const infoButton = document.querySelector('div[aria-label*="info"]');
+    if (!infoButton) throw new Error('Could not find info button');
+    simulateClick(infoButton);
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const mediaLink = document.querySelector('div.x12lumcd span.x1xhoq4m');
+    if (!mediaLink) {
+        log('No media section found, continuing...');
+        return [];
+    }
+    simulateClick(mediaLink);
+    
+    await new Promise(resolve => setTimeout(resolve, 3000));
     const mediaItems = [];
-    log('Starting media extraction');
-    const images = document.querySelectorAll(SELECTORS.MEDIA.image);
-    index = 1;
-    for (const img of images) {
+ 
+    const mediaDivs = document.querySelectorAll('div.x1xsqp64.x18d0r48');
+    if (!mediaDivs.length) {
+        log('No media items found, continuing...');
+        return [];
+    }
+ 
+    let index = 1;
+    for (const div of mediaDivs) {
         try {
-            const timestamp = img.closest(SELECTORS.MESSAGE.container)
-                ?.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent;
-            await downloadMedia(img, 'image/jpeg', timestamp, chatTitle, index);
-            mediaItems.push({ type: 'image', timestamp });
+            const style = div.style.backgroundImage;
+            if (!style || !style.includes('blob:')) continue;
+            
+            const blobUrl = style.match(/blob:([^"]*)/)[0];
+            const response = await fetch(blobUrl);
+            const blob = await response.blob();
+            
+            const filename = `${chatTitle}-${index}${blob.type.includes('video') ? '.mp4' : '.jpg'}`;
+            chrome.runtime.sendMessage({
+                action: "downloadMedia",
+                data: {
+                    url: URL.createObjectURL(blob),
+                    filename: filename,
+                    type: blob.type
+                }
+            });
+            mediaItems.push({ type: blob.type.includes('video') ? 'video' : 'image' });
+            log(`Downloaded media item ${index}`);
             index++;
         } catch (error) {
-            log(`Error downloading image: ${error.message}`);
+            log(`Error downloading media item ${index}: ${error.message}`);
         }
     }
+    
     return mediaItems;
-};
-
-const extractAndDownloadChat = async (chatTitle) => {
+ };
+ 
+ const extractAndDownloadChat = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
     await scrollChatToTop();
-    const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+    const messages = document.querySelectorAll('div.message-in, div.message-out');
     let content = '';
-    log(`Found ${messages.length} messages to extract from ${chatTitle}`);
+    content += `\n\n`;
+    content += `                  ===========================================\n`;
+    content += `                                   ${chatTitle.toUpperCase()}\n`;
+    content += `                  ===========================================\n\n`;
     messages.forEach((msg, index) => {
         const text = msg.querySelector(SELECTORS.MESSAGE.text);
         const timestamp = msg.querySelector(SELECTORS.MESSAGE.timestamp);
+        const isOutgoing = msg.matches('div.message-out');
         if (text) {
             const time = timestamp ? timestamp.textContent.trim() : '';
             const msgText = text.textContent.trim();
-            content += time ? `[${time}] ${msgText}\n` : `${msgText}\n`;
+            const date = new Date().toLocaleDateString('en-GB');
+            const sender = isOutgoing ? 'Me' : chatTitle;
+            
+            content += `[${date} ${time}]  ${sender}:\n`;
+            content += `>>> ${msgText}\n\n`;
+            content += `-------------------------------------------\n\n`;
+            
             if (index % 100 === 0) {
                 log(`Processed ${index} messages...`);
             }
         }
     });
-    const safeTitle = chatTitle.replace(/[^a-z0-9]/gi, '_');
-    const filename = `${safeTitle}_chat.txt`;
-    const blob = new Blob([`Chat with: ${chatTitle}\n\n${content}`], { type: 'text/plain' });
+    const filename = `${chatTitle}.txt`;
+    const blob = new Blob([content], { type: 'text/plain' });
     chrome.runtime.sendMessage({
         action: "downloadChat",
         data: {
@@ -304,7 +350,6 @@ const extractAndDownloadChat = async (chatTitle) => {
     });
     return filename;
 };
-
 
 async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
     try {
