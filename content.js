@@ -290,21 +290,83 @@ const extractMediaContent = async (chatTitle, type) => {
         }
         return mediaItems;
     }
-    else if (type === 'document') {
+    if (type === 'document') {
         log('Extracting document media');
         const mediaLink = document.querySelector('button[title="Docs"][role="tab"]');
         simulateClick(mediaLink);
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        return [];
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Find all PDF elements with their download buttons
+        const pdfContainers = document.querySelectorAll('[role="listitem"]');
+        let index = 1;
+        
+        for (const container of pdfContainers) {
+            try {
+                // Get PDF filename
+                const titleElement = container.querySelector('[title]');
+                if (!titleElement) continue;
+                const filename = titleElement.getAttribute('title');
+                
+                // Find and click download button
+                const downloadButton = container.querySelector('[aria-label*="Download"]');
+                if (!downloadButton) continue;
+                
+                simulateClick(downloadButton);
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                log(`Initiated download for document: ${filename}`);
+                mediaItems.push({ type: 'document', name: filename });
+                index++;
+            } catch (error) {
+                log(`Error downloading document ${index}: ${error.message}`);
+            }
+        }
+        return mediaItems;
     }
     else if (type === 'link') {
         log('Extracting link media');
         const mediaLink = document.querySelector('button[title="Links"][role="tab"]');
         simulateClick(mediaLink);
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        return [];
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
+        // Find all unique links
+        const linkElements = document.querySelectorAll('a[href^="http"]');
+        const uniqueLinks = new Map(); // Use Map to store unique links
+        
+        linkElements.forEach(element => {
+            const url = element.href;
+            const text = element.textContent?.trim() || url;
+            // Only add if not already present
+            if (!uniqueLinks.has(url)) {
+                uniqueLinks.set(url, text);
+            }
+        });
+        
+        if (uniqueLinks.size > 0) {
+            // Create content with unique links only
+            const linksContent = Array.from(uniqueLinks.entries())
+                .map(([url, text]) => `${text}\n${url}\n-------------------\n`)
+                .join('\n');
+            
+            const blob = new Blob([linksContent], { type: 'text/plain' });
+            const filename = `${chatTitle}-links.txt`;
+            
+            chrome.runtime.sendMessage({
+                action: "downloadMedia",
+                data: {
+                    url: URL.createObjectURL(blob),
+                    filename: filename,
+                    type: 'text/plain'
+                }
+            });
+            
+            mediaItems.push({ type: 'links', count: uniqueLinks.size });
+            log(`Saved ${uniqueLinks.size} unique links to ${filename}`);
+        }
+        
+        return mediaItems;
     }
+    return mediaItems;
  };
 const extractAndDownloadChat = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
