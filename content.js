@@ -292,11 +292,18 @@ const extractMediaContent = async (chatTitle, type) => {
     }
     else if (type === 'document') {
         log('Extracting document media');
+        const mediaLink = document.querySelector('button[title="Docs"][role="tab"]');
+        simulateClick(mediaLink);
+        await new Promise(resolve => setTimeout(resolve, 5000));
         return [];
     }
     else if (type === 'link') {
         log('Extracting link media');
+        const mediaLink = document.querySelector('button[title="Links"][role="tab"]');
+        simulateClick(mediaLink);
+        await new Promise(resolve => setTimeout(resolve, 5000));
         return [];
+        
     }
  };
 const extractAndDownloadChat = async (chatTitle) => {
