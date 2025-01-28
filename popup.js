@@ -4,10 +4,17 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
   button.addEventListener('click', async function() {
     const numberOfChats = parseInt(this.dataset.chats);
     const exportType = this.dataset.type;
+    const exportMedia = this.dataset.mediaType;
     const taskGroup = this.closest('.task-group');
     const loadingFill = taskGroup.querySelector('.loading-fill');
     const completionMessage = taskGroup.querySelector('.completion-message');
     const taskName = taskGroup.querySelector('.task-name');
+    if (exportType=='text') {
+      dataMediaType=false;
+    }
+    else {
+      dataMediaType=exportMedia;
+    }
     const statusText = taskGroup.querySelector('.status-text');
     const resetTask = () => {      
       loadingFill.style.transition = 'none';
@@ -30,7 +37,7 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
     chrome.runtime.sendMessage({ 
       action: "openWhatsApp",
       numberOfChats: numberOfChats,
-      includeMedia: exportType === 'media'
+      includeMedia: dataMediaType
     });
     const messageHandler = (message) => {
       switch (message.action) {

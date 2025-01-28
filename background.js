@@ -124,7 +124,7 @@ async function verifyContentScript(tabId, maxRetries = TIMEOUTS.MAX_RETRIES) {
 }
 
 
-async function handleWhatsAppTab(tab, numberOfChats, includeMedia = false, isNew = false) {
+async function handleWhatsAppTab(tab, numberOfChats, includeMedia, isNew = false) {
     try {
         tabStates.set(tab.id, STATES.LOADING);
         await chrome.tabs.update(tab.id, { active: true });
@@ -140,13 +140,20 @@ async function handleWhatsAppTab(tab, numberOfChats, includeMedia = false, isNew
         if (!verified) {
             throw new Error('Content script verification failed');
         }
-        log('Starting automation');
-        log(includeMedia);
-        await chrome.tabs.sendMessage(tab.id, { 
-            action: includeMedia ? "startMediaDownload" : "startAutomation",
-            numberOfChats: numberOfChats,
-            includeMedia: includeMedia
-        });
+        
+        if (includeMedia === false){
+                await chrome.tabs.sendMessage(tab.id, { 
+            action: "startAutomation",
+            numberOfChats: numberOfChats
+         });
+        }
+        else {
+            await chrome.tabs.sendMessage(tab.id, { 
+                action: "startMediaDownload",
+                numberOfChats: numberOfChats,
+                includeMedia: includeMedia
+            });
+        }
         tabStates.set(tab.id, STATES.READY);
         return true;
     } catch (error) {
