@@ -344,9 +344,10 @@ const extractMediaContent = async (chatTitle, type) => {
         
         if (uniqueLinks.size > 0) {
             // Create content with unique links only
+            // Inside the extractMediaContent function, replace the linksContent creation with:
             const linksContent = Array.from(uniqueLinks.entries())
-                .map(([url, text]) => `${text}\n${url}\n-------------------\n`)
-                .join('\n');
+            .map(([url]) => `${url}\n-------------------`)
+            .join('\n\n');
             
             const blob = new Blob([linksContent], { type: 'text/plain' });
             const filename = `${chatTitle}-links.txt`;
