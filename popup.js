@@ -4,19 +4,26 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
   button.addEventListener('click', async function() {
     const numberOfChats = parseInt(this.dataset.chats);
     const exportType = this.dataset.type;
+    const exportMedia = this.dataset.mediaType;
     const taskGroup = this.closest('.task-group');
     const loadingFill = taskGroup.querySelector('.loading-fill');
     const completionMessage = taskGroup.querySelector('.completion-message');
     const taskName = taskGroup.querySelector('.task-name');
+    if (exportType=='text') {
+      dataMediaType=false;
+    }
+    else {
+      dataMediaType=exportMedia;
+    }
     const statusText = taskGroup.querySelector('.status-text');
     const resetTask = () => {      
       loadingFill.style.transition = 'none';
       loadingFill.style.width = '0%';
-      loadingFill.style.opacity = '0.1'; // Reset opacity
+      loadingFill.style.opacity = '0.1';
       completionMessage.classList.remove('show');
       if (statusText) statusText.textContent = '';
-      loadingFill.offsetHeight; // Force reflow
-      loadingFill.style.transition = 'all 1.5s ease'; // Transition for both width and opacity
+      loadingFill.offsetHeight;
+      loadingFill.style.transition = 'all 1.5s ease';
     };
     if (loadingFill.style.width === '100%' || completionMessage.classList.contains('show')) {
       resetTask();
@@ -24,13 +31,13 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
     }
     const buttons = taskGroup.querySelectorAll('.chat-button');
     buttons.forEach(btn => btn.disabled = true);
-    loadingFill.style.opacity = '0.1'; // Set initial opacity
+    loadingFill.style.opacity = '0.1';
     loadingFill.style.width = '20%';
     const originalTaskName = taskName.textContent;
     chrome.runtime.sendMessage({ 
       action: "openWhatsApp",
       numberOfChats: numberOfChats,
-      includeMedia: exportType === 'media'
+      includeMedia: dataMediaType
     });
     const messageHandler = (message) => {
       switch (message.action) {
@@ -57,7 +64,6 @@ document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
     };
     const handleCompletion = () => {
       loadingFill.style.width = '100%';
-      // Fade out the loading fill
       loadingFill.style.opacity = '0';
       completionMessage.classList.add('show');
       playNotificationSound();

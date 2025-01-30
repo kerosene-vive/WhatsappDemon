@@ -240,7 +240,7 @@ const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) =>
         }
     });
 };
-const extractMediaContent = async (chatTitle) => {
+const extractMediaContent = async (chatTitle, type) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
     const menuButton = document.querySelector('.xr9ek0c');
     if (!menuButton) throw new Error('Could not find menu button');
@@ -258,34 +258,161 @@ const extractMediaContent = async (chatTitle) => {
     simulateClick(mediaLink);
     await new Promise(resolve => setTimeout(resolve, 3000));
     const mediaItems = [];
-    const mediaDivs = document.querySelectorAll('div.x1xsqp64.x18d0r48');
-    if (!mediaDivs.length) {
-        log('No media items found, continuing...');
-        return [];
+    if (type === 'photo') {
+        const mediaDivs = document.querySelectorAll('div.x1xsqp64.x18d0r48');
+        if (!mediaDivs.length) {
+            log('No media items found, continuing...');
+            return [];
+        }
+        let index = 1;
+        for (const div of mediaDivs) {
+            try {
+                const style = div.style.backgroundImage;
+                if (!style || !style.includes('blob:')) continue;
+                const blobUrl = style.match(/blob:([^"]*)/)[0];
+                const response = await fetch(blobUrl);
+                const blob = await response.blob();
+                const filename = `${chatTitle}-${index}${blob.type.includes('video') ? '.mp4' : '.jpg'}`;
+                chrome.runtime.sendMessage({
+                    action: "downloadMedia",
+                    data: {
+                        url: URL.createObjectURL(blob),
+                        filename: filename,
+                        type: blob.type
+                    }
+                });
+                mediaItems.push({ type: blob.type.includes('video') ? 'video' : 'image' });
+                log(`Downloaded media item ${index}`);
+                index++;
+            } catch (error) {
+                log(`Error downloading media item ${index}: ${error.message}`);
+            }
+        }
+        return mediaItems;
     }
-    let index = 1;
-    for (const div of mediaDivs) {
-        try {
-            const style = div.style.backgroundImage;
-            if (!style || !style.includes('blob:')) continue;
-            const blobUrl = style.match(/blob:([^"]*)/)[0];
-            const response = await fetch(blobUrl);
-            const blob = await response.blob();
-            const filename = `${chatTitle}-${index}${blob.type.includes('video') ? '.mp4' : '.jpg'}`;
+    // Update this section in the extractMediaContent function where type === 'document'
+    if (type === 'document') {
+
+        log('Extracting document media');
+        const mediaLink = document.querySelector('button[title="Docs"][role="tab"]');
+        simulateClick(mediaLink);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+
+    
+        // Select all document containers with the exact class structure
+        const docContainers = document.querySelectorAll('div[class*="x9f619"][class*="x1u9i22x"]');
+        let index = 1;
+        
+        for (const container of docContainers) {
+            try {
+                // Find the clickable element using the exact class structure from WhatsApp
+                const clickableElement = container.querySelector('div[role="button"][class*="x9f619"][class*="x78zum5"]');
+                if (!clickableElement) {
+                    log('No clickable element found');
+                    continue;
+                }
+                
+                // Get the name if available
+                const nameSpan = container.querySelector('span[class*="x13faqbe"]');
+                const docName = nameSpan ? nameSpan.textContent : `document_${index}`;
+                
+                log(`Attempting to click document: ${docName}`);
+                
+                // Use the exact coordinates for clicking
+                const rect = clickableElement.getBoundingClientRect();
+                const events = [
+                    new MouseEvent('mouseover', {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: rect.left + 5,  // Click near the left edge
+                        clientY: rect.top + (rect.height / 2)
+                    }),
+                    new MouseEvent('mousedown', {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: rect.left + 5,
+                        clientY: rect.top + (rect.height / 2)
+                    }),
+                    new MouseEvent('mouseup', {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: rect.left + 5,
+                        clientY: rect.top + (rect.height / 2)
+                    }),
+                    new MouseEvent('click', {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: rect.left + 5,
+                        clientY: rect.top + (rect.height / 2)
+                    })
+                ];
+                
+                // Dispatch all events in sequence
+                for (const event of events) {
+                    clickableElement.dispatchEvent(event);
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+                
+                log(`Clicked document: ${docName}`);
+                mediaItems.push({ type: 'document', name: docName });
+                
+                // Wait longer between documents
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                index++;
+            } catch (error) {
+                log(`Error with document ${index}: ${error.message}`);
+            }
+        }
+        return mediaItems;
+    }
+    else if (type === 'link') {
+        log('Extracting link media');
+        const mediaLink = document.querySelector('button[title="Links"][role="tab"]');
+        simulateClick(mediaLink);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Find all unique links
+        const linkElements = document.querySelectorAll('a[href^="http"]');
+        const uniqueLinks = new Map(); // Use Map to store unique links
+        
+        linkElements.forEach(element => {
+            const url = element.href;
+            const text = element.textContent?.trim() || url;
+            // Only add if not already present
+            if (!uniqueLinks.has(url)) {
+                uniqueLinks.set(url, text);
+            }
+        });
+        
+        if (uniqueLinks.size > 0) {
+            // Create content with unique links only
+            // Inside the extractMediaContent function, replace the linksContent creation with:
+            const linksContent = Array.from(uniqueLinks.entries())
+            .map(([url]) => `${url}\n\n-------------------`)
+            .join('\n\n');
+            
+            const blob = new Blob([linksContent], { type: 'text/plain' });
+            const filename = `${chatTitle}-links.txt`;
+            
             chrome.runtime.sendMessage({
                 action: "downloadMedia",
                 data: {
                     url: URL.createObjectURL(blob),
                     filename: filename,
-                    type: blob.type
+                    type: 'text/plain'
                 }
             });
-            mediaItems.push({ type: blob.type.includes('video') ? 'video' : 'image' });
-            log(`Downloaded media item ${index}`);
-            index++;
-        } catch (error) {
-            log(`Error downloading media item ${index}: ${error.message}`);
+            
+            mediaItems.push({ type: 'links', count: uniqueLinks.size });
+            log(`Saved ${uniqueLinks.size} unique links to ${filename}`);
         }
+        
+        return mediaItems;
     }
     return mediaItems;
  };
@@ -328,7 +455,7 @@ const extractAndDownloadChat = async (chatTitle) => {
 };
 
 
-async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
+async function automateWhatsAppExport(numberOfChats = 1) {
     try {
         log('Starting automation');
         chrome.runtime.sendMessage({ action: "loadingProgress", progress: 10 });
@@ -344,12 +471,8 @@ async function automateWhatsAppExport(numberOfChats = 1, includeMedia = false) {
             simulateClick(clickableChat);
             await waitForElement(SELECTORS.CHAT.messageContainer);
             let filename;
-            if (includeMedia) {
-                await extractMediaContent(chatTitle);
-            } else {
-                filename = await extractAndDownloadChat(chatTitle);
-                log(`Downloaded chat: ${filename}`);
-            }
+            filename = await extractAndDownloadChat(chatTitle);
+            log(`Downloaded chat: ${filename}`);
             chrome.runtime.sendMessage({ 
                 action: "chatProgress", 
                 progress: Math.round((i + 1) / exportedChats * 100),
@@ -434,7 +557,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 return true;
             }
             const chatCount = request.numberOfChats || 1;
-            log('Starting media download automation');
+            const type = request.includeMedia;
             const handleMediaDownload = async () => {
                 try {
                     const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
@@ -447,7 +570,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         simulateClick(clickableChat);
                         await waitForElement(SELECTORS.CHAT.messageContainer);
                         await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
-                        const mediaContent = await extractMediaContent(chatTitle);
+                        const mediaContent = await extractMediaContent(chatTitle, type);
                         log(`Extracted media from: ${chatTitle} - Found ${mediaContent.length} items`);
                         chrome.runtime.sendMessage({ 
                             action: "mediaProgress", 
