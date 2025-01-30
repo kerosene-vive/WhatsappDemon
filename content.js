@@ -290,35 +290,82 @@ const extractMediaContent = async (chatTitle, type) => {
         }
         return mediaItems;
     }
+    // Update this section in the extractMediaContent function where type === 'document'
     if (type === 'document') {
+
         log('Extracting document media');
         const mediaLink = document.querySelector('button[title="Docs"][role="tab"]');
         simulateClick(mediaLink);
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // Find all PDF elements with their download buttons
-        const pdfContainers = document.querySelectorAll('[role="listitem"]');
+
+    
+        // Select all document containers with the exact class structure
+        const docContainers = document.querySelectorAll('div[class*="x9f619"][class*="x1u9i22x"]');
         let index = 1;
         
-        for (const container of pdfContainers) {
+        for (const container of docContainers) {
             try {
-                // Get PDF filename
-                const titleElement = container.querySelector('[title]');
-                if (!titleElement) continue;
-                const filename = titleElement.getAttribute('title');
+                // Find the clickable element using the exact class structure from WhatsApp
+                const clickableElement = container.querySelector('div[role="button"][class*="x9f619"][class*="x78zum5"]');
+                if (!clickableElement) {
+                    log('No clickable element found');
+                    continue;
+                }
                 
-                // Find and click download button
-                const downloadButton = container.querySelector('[aria-label*="Download"]');
-                if (!downloadButton) continue;
+                // Get the name if available
+                const nameSpan = container.querySelector('span[class*="x13faqbe"]');
+                const docName = nameSpan ? nameSpan.textContent : `document_${index}`;
                 
-                simulateClick(downloadButton);
-                await new Promise(resolve => setTimeout(resolve, 500));
+                log(`Attempting to click document: ${docName}`);
                 
-                log(`Initiated download for document: ${filename}`);
-                mediaItems.push({ type: 'document', name: filename });
+                // Use the exact coordinates for clicking
+                const rect = clickableElement.getBoundingClientRect();
+                const events = [
+                    new MouseEvent('mouseover', {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: rect.left + 5,  // Click near the left edge
+                        clientY: rect.top + (rect.height / 2)
+                    }),
+                    new MouseEvent('mousedown', {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: rect.left + 5,
+                        clientY: rect.top + (rect.height / 2)
+                    }),
+                    new MouseEvent('mouseup', {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: rect.left + 5,
+                        clientY: rect.top + (rect.height / 2)
+                    }),
+                    new MouseEvent('click', {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: rect.left + 5,
+                        clientY: rect.top + (rect.height / 2)
+                    })
+                ];
+                
+                // Dispatch all events in sequence
+                for (const event of events) {
+                    clickableElement.dispatchEvent(event);
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+                
+                log(`Clicked document: ${docName}`);
+                mediaItems.push({ type: 'document', name: docName });
+                
+                // Wait longer between documents
+                await new Promise(resolve => setTimeout(resolve, 1500));
                 index++;
             } catch (error) {
-                log(`Error downloading document ${index}: ${error.message}`);
+                log(`Error with document ${index}: ${error.message}`);
             }
         }
         return mediaItems;
@@ -346,7 +393,7 @@ const extractMediaContent = async (chatTitle, type) => {
             // Create content with unique links only
             // Inside the extractMediaContent function, replace the linksContent creation with:
             const linksContent = Array.from(uniqueLinks.entries())
-            .map(([url]) => `${url}\n-------------------`)
+            .map(([url]) => `${url}\n\n-------------------`)
             .join('\n\n');
             
             const blob = new Blob([linksContent], { type: 'text/plain' });
