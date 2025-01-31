@@ -1,19 +1,22 @@
-const cleanupPort = chrome.runtime.connect({ name: 'cleanup' });
+let availableChats = [];
 
 document.addEventListener('DOMContentLoaded', () => {
-    const overlay = document.createElement('div');
-    overlay.className = 'loading-overlay';
-    overlay.innerHTML = '<div class="spinner"></div><div>Connecting to WhatsApp...</div>';
-    document.body.appendChild(overlay);
-    
     chrome.runtime.sendMessage({ action: 'initializeWhatsApp' });
 });
 
 chrome.runtime.onMessage.addListener((message) => {
     switch (message.action) {
         case 'whatsappReady':
-            document.querySelector('.loading-overlay').remove();
-            initializeButtons();
+            chrome.runtime.sendMessage({ action: 'getChats' }, response => {
+                if (response.chats) {
+                    availableChats = response.chats;
+                    updateChatSelection();
+                }
+            });
+            break;
+        case 'chatsAvailable':
+            availableChats = message.chats;
+            updateChatSelection();
             break;
         case 'whatsappClosed':
             location.reload();
@@ -21,13 +24,45 @@ chrome.runtime.onMessage.addListener((message) => {
     }
 });
 
+function updateChatSelection() {
+    const container = document.querySelector('.chat-selection') || createChatSelectionUI();
+    container.innerHTML = availableChats.map(chat => `
+        <div class="chat-item">
+            <input type="checkbox" id="${chat}" value="${chat}">
+            <label for="${chat}">${chat}</label>
+        </div>
+    `).join('');
+    document.querySelector('.loading-overlay')?.remove();
+    initializeButtons();
+}
+
+function createChatSelectionUI() {
+    const container = document.createElement('div');
+    container.className = 'chat-selection';
+    document.querySelector('.task-groups').prepend(container);
+    return container;
+}
+
+
+
+
+const cleanupPort = chrome.runtime.connect({ name: 'cleanup' });
+
+
+
 function initializeButtons() {
     document.querySelectorAll('.chat-button:not(.disabled)').forEach(button => {
         button.addEventListener('click', async function() {
-            const numberOfChats = parseInt(this.dataset.chats);
+          const selectedChats = [...document.querySelectorAll('.chat-item input:checked')].map(input => input.value);
+          if (!selectedChats.length) {
+              alert('Please select at least one chat');
+              return;
+          }
+
             const exportType = this.dataset.type;
             const exportMedia = this.dataset.mediaType;
             const taskGroup = this.closest('.task-group');
+
             const loadingFill = taskGroup.querySelector('.loading-fill');
             const completionMessage = taskGroup.querySelector('.completion-message');
             const taskName = taskGroup.querySelector('.task-name');
@@ -49,13 +84,13 @@ function initializeButtons() {
             const originalTaskName = taskName.textContent;
             
             chrome.runtime.sendMessage({
-                action: "startAutomation",
-                numberOfChats,
-                includeMedia: dataMediaType
-            });
-            
-            const messageHandler = createMessageHandler(loadingFill, completionMessage, buttons, taskName, statusText, originalTaskName);
-            chrome.runtime.onMessage.addListener(messageHandler);
+              action: "startAutomation",
+              selectedChats,
+              includeMedia: dataMediaType
+          });
+          
+          const messageHandler = createMessageHandler(loadingFill, completionMessage, buttons, taskName, statusText, originalTaskName);
+          chrome.runtime.onMessage.addListener(messageHandler);
         });
     });
 }

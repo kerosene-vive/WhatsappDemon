@@ -46,6 +46,132 @@ const MIME_TYPES = {
     VIDEO: ['video/mp4', 'video/webm'],
     DOCUMENT: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 };
+let availableChats = [];
+const getChatsList = async () => {
+    const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
+    const { clickableAreas, titles } = findTargetChat(chatListContainer);
+    return titles.map((title, index) => ({
+        title,
+        index,
+        clickableElement: clickableAreas[index]
+    }));
+};
+async function handleMediaDownload(selectedChats, type) {
+    try {
+        for (let chatTitle of selectedChats) {
+            const chat = availableChats.find(c => c.title === chatTitle);
+            if (!chat) continue;
+            
+            await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
+            simulateClick(chat.clickableElement);
+            await waitForElement(SELECTORS.CHAT.messageContainer);
+            
+            const mediaContent = await extractMediaContent(chatTitle, type);
+            log(`Extracted media from: ${chatTitle} - Found ${mediaContent.length} items`);
+            
+            chrome.runtime.sendMessage({ 
+                action: "mediaProgress", 
+                progress: (selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100,
+                chat: chatTitle,
+                mediaCount: mediaContent.length
+            });
+        }
+        
+        chrome.runtime.sendMessage({ action: "mediaDownloadComplete" });
+    } catch (error) {
+        chrome.runtime.sendMessage({
+            action: "automationError",
+            error: error.message
+        });
+    }
+}
+
+async function initialize() {
+    if (isInitialized) return true;
+    if (initializationAttempts >= MAX_INIT_ATTEMPTS) return false;
+    
+    initializationAttempts++;
+    try {
+        await verifyEnvironment();
+        const response = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({ action: 'contentScriptReady' }, resolve);
+        });
+        
+        if (!response || response.status !== 'acknowledged') {
+            throw new Error('Initialization not acknowledged');
+        }
+        
+        availableChats = await getChatsList();
+        chrome.runtime.sendMessage({ 
+            action: 'chatsAvailable', 
+            chats: availableChats.map(chat => chat.title)
+        });
+        
+        isInitialized = true;
+        return true;
+    } catch (error) {
+        log(`Initialization error: ${error.message}`);
+        if (initializationAttempts < MAX_INIT_ATTEMPTS) {
+            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
+        }
+        return false;
+    }
+}
+async function automateWhatsAppExport(selectedChats, includeMedia) {
+    try {
+        for (let chatTitle of selectedChats) {
+            const chat = availableChats.find(c => c.title === chatTitle);
+            if (!chat) continue;
+            if (includeMedia === false ){
+                        await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
+                        simulateClick(chat.clickableElement);
+                        await waitForElement(SELECTORS.CHAT.messageContainer);
+                        const filename = await extractAndDownloadChat(chatTitle);
+                        log(`Downloaded chat: ${filename}`);
+                        chrome.runtime.sendMessage({ 
+                            action: "chatProgress", 
+                            progress: Math.round((selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100),
+                            chatTitle 
+                        });
+                    
+                    chrome.runtime.sendMessage({ 
+                        action: "exportComplete",
+                        message: `Successfully exported ${selectedChats.length} chats`
+                    });
+                
+            
+            }
+            else {
+                await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
+                simulateClick(chat.clickableElement);
+                switch (includeMedia) {
+                    case 'photo':
+                        await handleMediaDownload(selectedChats, 'photo');
+                        break;
+                    case 'document':
+                        await handleMediaDownload(selectedChats, 'document');
+                        break;
+                    case 'link':
+                        await handleMediaDownload(selectedChats, 'link');
+                        break;
+                    default:
+                        await handleMediaDownload(selectedChats, 'photo');
+                        break;
+                }
+                chrome.runtime.sendMessage({ 
+                    action: "chatProgress", 
+                    progress: Math.round((selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100),
+                    chatTitle 
+                });
+            }
+        }    
+    } catch (error) {
+        chrome.runtime.sendMessage({
+            action: "automationError",
+            error: error.message
+        });
+    }
+}
 const log = (msg) => {
     console.log(`[WhatsApp Export] ${msg}`);
     try {
@@ -454,153 +580,21 @@ const extractAndDownloadChat = async (chatTitle) => {
     return filename;
 };
 
-
-async function automateWhatsAppExport(numberOfChats = 1) {
-    try {
-        log('Starting automation');
-        chrome.runtime.sendMessage({ action: "loadingProgress", progress: 10 });
-        const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
-        log('Chat list container loaded');
-        chrome.runtime.sendMessage({ action: "loadingProgress", progress: 20 });
-        const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
-        const exportedChats = Math.min(clickableChats.length, numberOfChats);
-        for (let i = 0; i < exportedChats; i++) {
-            const clickableChat = clickableChats[i];
-            const chatTitle = chatTitles[i];
-            await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
-            simulateClick(clickableChat);
-            await waitForElement(SELECTORS.CHAT.messageContainer);
-            let filename;
-            filename = await extractAndDownloadChat(chatTitle);
-            log(`Downloaded chat: ${filename}`);
-            chrome.runtime.sendMessage({ 
-                action: "chatProgress", 
-                progress: Math.round((i + 1) / exportedChats * 100),
-                chatTitle: chatTitle 
-            });
-        }
-        log('Export completed successfully');
-        chrome.runtime.sendMessage({ 
-            action: "exportComplete",
-            message: `Successfully exported ${exportedChats} chats`
-        });
-    } catch (error) {
-        log(`Error during automation: ${error.message}`);
-        chrome.runtime.sendMessage({
-            action: "automationError",
-            error: error.message
-        });
-    }
-}
-
-
-async function initialize() {
-    if (isInitialized) {
-        log('Already initialized');
-        return true;
-    }
-    if (initializationAttempts >= MAX_INIT_ATTEMPTS) {
-        log('Max initialization attempts reached');
-        return false;
-    }
-    initializationAttempts++;
-    log(`Initialization attempt ${initializationAttempts}`);
-    try {
-        await verifyEnvironment();
-        log('Environment verified');
-        const response = await new Promise((resolve) => {
-            chrome.runtime.sendMessage(
-                { action: 'contentScriptReady' },
-                (response) => resolve(response)
-            );
-        });
-        if (!response || response.status !== 'acknowledged') {
-            throw new Error('Initialization not acknowledged');
-        }
-        isInitialized = true;
-        log('Content script initialized successfully');
-        return true;
-    } catch (error) {
-        log(`Initialization error: ${error.message}`);
-        if (initializationAttempts < MAX_INIT_ATTEMPTS) {
-            log('Retrying initialization...');
-            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
-        }
-        return false;
-    }
-}
-
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    log(`Received message: ${request.action}`);
     switch(request.action) {
         case "ping":
             sendResponse({ status: 'ready', initialized: isInitialized });
+            break;
+        case "getChats":
+            sendResponse({ chats: availableChats.map(chat => chat.title) });
             break;
         case "startAutomation":
             if (!isInitialized) {
                 sendResponse({ error: 'Content script not initialized' });
                 return true;
-            }         
-            const numberOfChats = request.numberOfChats || 1;
-            automateWhatsAppExport(numberOfChats).catch(error => {
-                log(`Automation error: ${error.message}`);
-                chrome.runtime.sendMessage({
-                    action: "automationError",
-                    error: error.message
-                }).catch(() => {});
-            });
-            sendResponse({ status: 'text automation started' });
-            break;
-        case "startMediaDownload":
-            if (!isInitialized) {
-                sendResponse({ error: 'Content script not initialized' });
-                return true;
             }
-            const chatCount = request.numberOfChats || 1;
-            const type = request.includeMedia;
-            const handleMediaDownload = async () => {
-                try {
-                    const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
-                    const { clickableAreas: clickableChats, titles: chatTitles } = findTargetChat(chatListContainer);
-                    const exportedChats = Math.min(clickableChats.length, chatCount);
-                    for (let i = 0; i < exportedChats; i++) {
-                        const clickableChat = clickableChats[i];
-                        const chatTitle = chatTitles[i];
-                        await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
-                        simulateClick(clickableChat);
-                        await waitForElement(SELECTORS.CHAT.messageContainer);
-                        await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
-                        const mediaContent = await extractMediaContent(chatTitle, type);
-                        log(`Extracted media from: ${chatTitle} - Found ${mediaContent.length} items`);
-                        chrome.runtime.sendMessage({ 
-                            action: "mediaProgress", 
-                            progress: (i + 1) / exportedChats * 100,
-                            chat: chatTitle,
-                            mediaCount: mediaContent.length
-                        });
-                    }
-                    log('Media download completed successfully');
-                    chrome.runtime.sendMessage({ action: "mediaDownloadComplete" });
-                } catch (error) {
-                    log(`Error during media download: ${error.message}`);
-                    chrome.runtime.sendMessage({
-                        action: "automationError",
-                        error: error.message
-                    }).catch(() => {});
-                }
-            };
-            handleMediaDownload();
-            sendResponse({ status: 'media download started' });
-            break;
-        case "checkStatus":
-            sendResponse({ 
-                status: 'active',
-                initialized: isInitialized,
-                attempts: initializationAttempts
-            });
-            break;
-        default:
-            sendResponse({ status: 'unknown_action' });
+            automateWhatsAppExport(request.selectedChats, request.includeMedia);
+            sendResponse({ status: 'automation started' });
             break;
     }
     return true;

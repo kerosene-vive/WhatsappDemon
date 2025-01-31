@@ -44,6 +44,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 chrome.tabs.sendMessage(whatsappTabId, request);
             }
             break;
+        case "chatsAvailable":
+                chrome.runtime.sendMessage(request).catch(() => {});
+                break;
         case "contentScriptReady":
             if (sender.tab) {
                 tabStates.set(sender.tab.id, STATES.READY);
