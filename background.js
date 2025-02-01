@@ -31,46 +31,58 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.error(error));
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    log(`Received message: ${request.action}`);
-    switch (request.action) {
-        case "initializeWhatsApp":
-            handleWhatsApp()
-                .then(() => sendResponse({ status: 'ready' }))
-                .catch(error => sendResponse({ status: 'error', message: error.message }));
-            return true;
-        case "startAutomation":
-            if (whatsappTabId) {
-                chrome.tabs.sendMessage(whatsappTabId, request);
-            }
-            break;
-        case "chatsAvailable":
-                chrome.runtime.sendMessage(request).catch(() => {});
-                break;
-        case "contentScriptReady":
-            if (sender.tab) {
-                tabStates.set(sender.tab.id, STATES.READY);
-                whatsappTabId = sender.tab.id;
-                chrome.runtime.sendMessage({ action: 'whatsappReady' });
-                sendResponse({ status: 'acknowledged' });
-            }
-            break;
-        case "downloadChat":
-        case "downloadMedia":
-            if (request.data) {
-                chrome.downloads.download({
-                    url: request.data.url,
-                    filename: request.data.filename,
-                    saveAs: false
-                });
-            }
-            break;
-        default:
-            chrome.runtime.sendMessage(request).catch(() => {});
-            break;
-    }
-    return true;
-});
+  const processedDownloads = new Set();
+
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      log(`Received message: ${request.action}`);
+      switch (request.action) {
+          case "initializeWhatsApp":
+              handleWhatsApp()
+                  .then(() => sendResponse({ status: 'ready' }))
+                  .catch(error => sendResponse({ status: 'error', message: error.message }));
+              return true;
+          case "startAutomation":
+              if (whatsappTabId) {
+                  chrome.tabs.sendMessage(whatsappTabId, request);
+              }
+              break;
+          case "chatsAvailable":
+              chrome.runtime.sendMessage(request).catch(() => {});
+              break;
+          case "contentScriptReady":
+              if (sender.tab) {
+                  tabStates.set(sender.tab.id, STATES.READY);
+                  whatsappTabId = sender.tab.id;
+                  chrome.runtime.sendMessage({ action: 'whatsappReady' });
+                  sendResponse({ status: 'acknowledged' });
+              }
+              break;
+          case "downloadChat":
+          case "downloadMedia":
+              if (request.data) {
+                  // Create a unique key for this download
+                  const downloadKey = `${request.data.filename}-${request.data.url}`;
+                  
+                  // Only process if we haven't seen this download before
+                  if (!processedDownloads.has(downloadKey)) {
+                      processedDownloads.add(downloadKey);
+                      chrome.downloads.download({
+                          url: request.data.url,
+                          filename: request.data.filename,
+                          saveAs: false
+                      });
+                  }
+              }
+              break;
+          default:
+              // Prevent duplicate message forwarding
+              if (!sender.tab || sender.tab.id === whatsappTabId) {
+                  chrome.runtime.sendMessage(request).catch(() => {});
+              }
+              break;
+      }
+      return true;
+  });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
     if (whatsappTabId === tabId) {

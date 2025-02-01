@@ -56,8 +56,50 @@ const getChatsList = async () => {
         clickableElement: clickableAreas[index]
     }));
 };
+// In paste.txt, modify the message listener to prevent duplicate handling:
+
+// Add at the top with other listeners
+let processingAutomation = false;
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    switch(request.action) {
+        case "ping":
+            sendResponse({ status: 'ready', initialized: isInitialized });
+            break;
+        case "getChats":
+            sendResponse({ chats: availableChats.map(chat => chat.title) });
+            break;
+        case "startAutomation":
+            // Prevent concurrent automation runs
+            if (processingAutomation) {
+                sendResponse({ error: 'Automation already in progress' });
+                return true;
+            }
+            
+            if (!isInitialized) {
+                sendResponse({ error: 'Content script not initialized' });
+                return true;
+            }
+            
+            processingAutomation = true;
+            automateWhatsAppExport(request.selectedChats, request.includeMedia)
+                .finally(() => {
+                    processingAutomation = false;
+                });
+            sendResponse({ status: 'automation started' });
+            break;
+    }
+    return true;
+});
+
+// Replace handleMediaDownload function with:
 async function handleMediaDownload(selectedChats, type) {
+    if (processingAutomation) {
+        throw new Error('Automation already in progress');
+    }
+    
     try {
+        processingAutomation = true;
         for (let chatTitle of selectedChats) {
             const chat = availableChats.find(c => c.title === chatTitle);
             if (!chat) continue;
@@ -69,7 +111,6 @@ async function handleMediaDownload(selectedChats, type) {
             const mediaContent = await extractMediaContent(chatTitle, type);
             log(`Extracted media from: ${chatTitle} - Found ${mediaContent.length} items`);
             
-            // Send progress update for each chat
             chrome.runtime.sendMessage({ 
                 action: "mediaProgress", 
                 progress: (selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100,
@@ -78,13 +119,14 @@ async function handleMediaDownload(selectedChats, type) {
             });
         }
         
-        // Send completion message after all chats are processed
         chrome.runtime.sendMessage({ action: "mediaDownloadComplete" });
     } catch (error) {
         chrome.runtime.sendMessage({
             action: "automationError",
             error: error.message
         });
+    } finally {
+        processingAutomation = false;
     }
 }
 
@@ -119,6 +161,7 @@ async function initialize() {
         return false;
     }
 }
+// In paste.txt, modify the automateWhatsAppExport function:
 async function automateWhatsAppExport(selectedChats, includeMedia) {
     try {
         for (let chatTitle of selectedChats) {
@@ -130,8 +173,13 @@ async function automateWhatsAppExport(selectedChats, includeMedia) {
             simulateClick(chat.clickableElement);
             await waitForElement(SELECTORS.CHAT.messageContainer);
 
-            if (includeMedia === false) {
-                // Only download chat text when includeMedia is false
+            // Only execute one type of download based on includeMedia parameter
+            if (includeMedia) {
+                // Handle media downloads
+                const mediaType = typeof includeMedia === 'string' ? includeMedia : 'photo';
+                await extractMediaContent(chatTitle, mediaType);
+            } else {
+                // Only download chat text
                 const filename = await extractAndDownloadChat(chatTitle);
                 log(`Downloaded chat: ${filename}`);
                 // Send progress update for chat downloads
@@ -140,16 +188,12 @@ async function automateWhatsAppExport(selectedChats, includeMedia) {
                     progress: Math.round((selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100),
                     chatTitle 
                 });
-            } else {
-                // Handle media downloads without sending progress here
-                const mediaType = includeMedia || 'photo';
-                await extractMediaContent(chatTitle, mediaType);
             }
         }    
 
         // Send completion message
         chrome.runtime.sendMessage({ 
-            action: includeMedia === false ? "exportComplete" : "mediaDownloadComplete",
+            action: includeMedia ? "mediaDownloadComplete" : "exportComplete",
             message: `Successfully processed ${selectedChats.length} chats`
         });
 
@@ -542,25 +586,6 @@ const extractAndDownloadChat = async (chatTitle) => {
     return filename;
 };
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    switch(request.action) {
-        case "ping":
-            sendResponse({ status: 'ready', initialized: isInitialized });
-            break;
-        case "getChats":
-            sendResponse({ chats: availableChats.map(chat => chat.title) });
-            break;
-        case "startAutomation":
-            if (!isInitialized) {
-                sendResponse({ error: 'Content script not initialized' });
-                return true;
-            }
-            automateWhatsAppExport(request.selectedChats, request.includeMedia);
-            sendResponse({ status: 'automation started' });
-            break;
-    }
-    return true;
-});
 
 log('Content script loaded');
 initialize();
