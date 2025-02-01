@@ -12,6 +12,14 @@
             <img src="icons/header.png" alt="Assistant Icon" class="header-icon">
             <div class="header-text">WhatsApp Demon</div>
         </div>
+
+        <div class="chat-selection">
+            <div class="chat-selection-header">
+                <span>Select Chats</span>
+                <button id="selectAll">Select All</button>
+            </div>
+            <div id="chatList" class="chat-list"></div>
+        </div>
         
         <div class="task-group" id="text-export">
             <div class="loading-fill"></div>
@@ -24,29 +32,11 @@
                     Download Messages
                 </div>
                 <div class="button-group">
-                    <button class="chat-button" data-chats="1" data-type="text">
+                    <button class="chat-button" data-type="text">
                         <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
                         </svg>
-                        1 Chat
-                    </button>
-                    <button class="chat-button" data-chats="5" data-type="text">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        5 Chats
-                    </button>
-                    <button class="chat-button" data-chats="10" data-type="text">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        10 Chats
-                    </button>
-                    <button class="chat-button" data-chats="20" data-type="text">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        20 Chats
+                        Download Selected
                     </button>
                 </div>
                 <div class="completion-message">Download Complete! ✓</div>
@@ -65,29 +55,11 @@
                     Download Photos
                 </div>
                 <div class="button-group">
-                    <button class="chat-button" data-chats="1" data-type="media" data-media-type="photo">
+                    <button class="chat-button" data-type="media" data-media-type="photo">
                         <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
                         </svg>
-                        1 Chat
-                    </button>
-                    <button class="chat-button" data-chats="5" data-type="media" data-media-type="photo">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        5 Chats
-                    </button>
-                    <button class="chat-button" data-chats="10" data-type="media" data-media-type="photo">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        10 Chats
-                    </button>
-                    <button class="chat-button" data-chats="20" data-type="media" data-media-type="photo">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        20 Chats
+                        Download Selected
                     </button>
                 </div>
                 <div class="completion-message">Download Complete! ✓</div>
@@ -105,29 +77,11 @@
                     Download Documents
                 </div>
                 <div class="button-group">
-                    <button class="chat-button" data-chats="1" data-type="media" data-media-type="document">
+                    <button class="chat-button" data-type="media" data-media-type="document">
                         <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
                         </svg>
-                        1 Chat
-                    </button>
-                    <button class="chat-button" data-chats="5" data-type="media" data-media-type="document">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        5 Chats
-                    </button>
-                    <button class="chat-button" data-chats="10" data-type="media" data-media-type="document">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        10 Chats
-                    </button>
-                    <button class="chat-button" data-chats="20" data-type="media" data-media-type="document">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        20 Chats
+                        Download Selected
                     </button>
                 </div>
                 <div class="completion-message">Download Complete! ✓</div>
@@ -145,29 +99,11 @@
                     Download Links
                 </div>
                 <div class="button-group">
-                    <button class="chat-button" data-chats="1" data-type="media" data-media-type="link">
+                    <button class="chat-button" data-type="media" data-media-type="link">
                         <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
                         </svg>
-                        1 Chat
-                    </button>
-                    <button class="chat-button" data-chats="5" data-type="media" data-media-type="link">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        5 Chats
-                    </button>
-                    <button class="chat-button" data-chats="10" data-type="media" data-media-type="link">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        10 Chats
-                    </button>
-                    <button class="chat-button" data-chats="20" data-type="media" data-media-type="link">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                        </svg>
-                        20 Chats
+                        Download Selected
                     </button>
                 </div>
                 <div class="completion-message">Download Complete! ✓</div>
