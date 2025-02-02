@@ -4,17 +4,16 @@ const TIMEOUTS = {
     CONNECTION_RETRY: 1000,
     MAX_RETRIES: 5
 };
-
 const STATES = {
     INITIAL: 'initial',
     LOADING: 'loading',
     READY: 'ready',
     ERROR: 'error'
 };
-
 const log = (msg) => console.log(`[WhatsApp Exporter] ${msg}`);
 const tabStates = new Map();
 let whatsappTabId = null;
+const processedDownloads = new Set();
 
 chrome.runtime.onConnect.addListener((port) => {
     if (port.name === 'cleanup') {
@@ -31,9 +30,7 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.error(error));
 
-  const processedDownloads = new Set();
-
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       log(`Received message: ${request.action}`);
       switch (request.action) {
           case "initializeWhatsApp":
@@ -60,10 +57,7 @@ chrome.sidePanel
           case "downloadChat":
           case "downloadMedia":
               if (request.data) {
-                  // Create a unique key for this download
                   const downloadKey = `${request.data.filename}-${request.data.url}`;
-                  
-                  // Only process if we haven't seen this download before
                   if (!processedDownloads.has(downloadKey)) {
                       processedDownloads.add(downloadKey);
                       chrome.downloads.download({
@@ -75,7 +69,6 @@ chrome.sidePanel
               }
               break;
           default:
-              // Prevent duplicate message forwarding
               if (!sender.tab || sender.tab.id === whatsappTabId) {
                   chrome.runtime.sendMessage(request).catch(() => {});
               }
@@ -92,6 +85,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     tabStates.delete(tabId);
 });
 
+
 async function injectContentScript(tabId) {
     try {
         await chrome.scripting.executeScript({
@@ -103,6 +97,7 @@ async function injectContentScript(tabId) {
         return false;
     }
 }
+
 
 async function verifyContentScript(tabId, maxRetries = TIMEOUTS.MAX_RETRIES) {
     for (let i = 0; i < maxRetries; i++) {
@@ -116,25 +111,21 @@ async function verifyContentScript(tabId, maxRetries = TIMEOUTS.MAX_RETRIES) {
     return false;
 }
 
+
 async function handleWhatsAppTab(tab, isNew = false) {
     try {
         tabStates.set(tab.id, STATES.LOADING);
         await chrome.tabs.update(tab.id, { active: true });
-        
         if (isNew) {
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.WHATSAPP_LOAD));
         }
-        
         if (!await injectContentScript(tab.id)) {
             throw new Error('Content script injection failed');
         }
-        
         await new Promise(resolve => setTimeout(resolve, TIMEOUTS.SCRIPT_INIT));
-        
         if (!await verifyContentScript(tab.id)) {
             throw new Error('Content script verification failed');
         }
-        
         tabStates.set(tab.id, STATES.READY);
         return true;
     } catch (error) {
@@ -142,6 +133,7 @@ async function handleWhatsAppTab(tab, isNew = false) {
         throw error;
     }
 }
+
 
 async function handleWhatsApp() {
     try {
@@ -153,17 +145,14 @@ async function handleWhatsApp() {
             await handleWhatsAppTab(tabs[0], false);
             return true;
         }
-        
         const newTab = await chrome.tabs.create({
             url: 'https://web.whatsapp.com',
             active: true
         });
-        
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 reject(new Error('Tab load timeout'));
             }, 30000);
-            
             chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
                 if (tabId === newTab.id && info.status === 'complete') {
                     chrome.tabs.onUpdated.removeListener(listener);

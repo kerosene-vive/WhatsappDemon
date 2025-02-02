@@ -47,18 +47,6 @@ const MIME_TYPES = {
     DOCUMENT: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 };
 let availableChats = [];
-const getChatsList = async () => {
-    const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
-    const { clickableAreas, titles } = findTargetChat(chatListContainer);
-    return titles.map((title, index) => ({
-        title,
-        index,
-        clickableElement: clickableAreas[index]
-    }));
-};
-// In paste.txt, modify the message listener to prevent duplicate handling:
-
-// Add at the top with other listeners
 let processingAutomation = false;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -70,17 +58,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ chats: availableChats.map(chat => chat.title) });
             break;
         case "startAutomation":
-            // Prevent concurrent automation runs
             if (processingAutomation) {
                 sendResponse({ error: 'Automation already in progress' });
                 return true;
             }
-            
             if (!isInitialized) {
                 sendResponse({ error: 'Content script not initialized' });
                 return true;
             }
-            
             processingAutomation = true;
             automateWhatsAppExport(request.selectedChats, request.includeMedia)
                 .finally(() => {
@@ -92,25 +77,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
 });
 
-// Replace handleMediaDownload function with:
+
 async function handleMediaDownload(selectedChats, type) {
     if (processingAutomation) {
         throw new Error('Automation already in progress');
     }
-    
     try {
         processingAutomation = true;
         for (let chatTitle of selectedChats) {
             const chat = availableChats.find(c => c.title === chatTitle);
             if (!chat) continue;
-            
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(chat.clickableElement);
             await waitForElement(SELECTORS.CHAT.messageContainer);
-            
             const mediaContent = await extractMediaContent(chatTitle, type);
             log(`Extracted media from: ${chatTitle} - Found ${mediaContent.length} items`);
-            
             chrome.runtime.sendMessage({ 
                 action: "mediaProgress", 
                 progress: (selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100,
@@ -118,7 +99,6 @@ async function handleMediaDownload(selectedChats, type) {
                 mediaCount: mediaContent.length
             });
         }
-        
         chrome.runtime.sendMessage({ action: "mediaDownloadComplete" });
     } catch (error) {
         chrome.runtime.sendMessage({
@@ -130,27 +110,24 @@ async function handleMediaDownload(selectedChats, type) {
     }
 }
 
+
 async function initialize() {
     if (isInitialized) return true;
     if (initializationAttempts >= MAX_INIT_ATTEMPTS) return false;
-    
     initializationAttempts++;
     try {
         await verifyEnvironment();
         const response = await new Promise((resolve) => {
             chrome.runtime.sendMessage({ action: 'contentScriptReady' }, resolve);
         });
-        
         if (!response || response.status !== 'acknowledged') {
             throw new Error('Initialization not acknowledged');
         }
-        
         availableChats = await getChatsList();
         chrome.runtime.sendMessage({ 
             action: 'chatsAvailable', 
             chats: availableChats.map(chat => chat.title)
         });
-        
         isInitialized = true;
         return true;
     } catch (error) {
@@ -161,28 +138,22 @@ async function initialize() {
         return false;
     }
 }
-// In paste.txt, modify the automateWhatsAppExport function:
+
+
 async function automateWhatsAppExport(selectedChats, includeMedia) {
     try {
         for (let chatTitle of selectedChats) {
             const chat = availableChats.find(c => c.title === chatTitle);
             if (!chat) continue;
-
-            // Select the chat first
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(chat.clickableElement);
             await waitForElement(SELECTORS.CHAT.messageContainer);
-
-            // Only execute one type of download based on includeMedia parameter
             if (includeMedia) {
-                // Handle media downloads
                 const mediaType = typeof includeMedia === 'string' ? includeMedia : 'photo';
                 await extractMediaContent(chatTitle, mediaType);
             } else {
-                // Only download chat text
                 const filename = await extractAndDownloadChat(chatTitle);
                 log(`Downloaded chat: ${filename}`);
-                // Send progress update for chat downloads
                 chrome.runtime.sendMessage({ 
                     action: "chatProgress", 
                     progress: Math.round((selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100),
@@ -190,13 +161,10 @@ async function automateWhatsAppExport(selectedChats, includeMedia) {
                 });
             }
         }    
-
-        // Send completion message
         chrome.runtime.sendMessage({ 
             action: includeMedia ? "mediaDownloadComplete" : "exportComplete",
             message: `Successfully processed ${selectedChats.length} chats`
         });
-
     } catch (error) {
         chrome.runtime.sendMessage({
             action: "automationError",
@@ -214,6 +182,15 @@ const log = (msg) => {
     } catch (e) {
         console.error('Logging failed:', e);
     }
+};
+const getChatsList = async () => {
+    const chatListContainer = await waitForElement(SELECTORS.CHAT_LIST.container);
+    const { clickableAreas, titles } = findTargetChat(chatListContainer);
+    return titles.map((title, index) => ({
+        title,
+        index,
+        clickableElement: clickableAreas[index]
+    }));
 };
 const scrollChatToTop = async () => {
     log('Starting to scroll chat history');
@@ -400,17 +377,14 @@ const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) =>
 };
 const extractMediaContent = async (chatTitle, type) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
-    
     const menuButton = document.querySelector('.xr9ek0c');
     if (!menuButton) throw new Error('Could not find menu button');
     simulateClick(menuButton);
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
     const infoButton = document.querySelector('div[aria-label*="info"]');
     if (!infoButton) throw new Error('Could not find info button');
     simulateClick(infoButton);
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
     const mediaLink = document.querySelector('div.x12lumcd span.x1xhoq4m');
     if (!mediaLink) {
         log('No media section found, continuing...');
@@ -418,25 +392,20 @@ const extractMediaContent = async (chatTitle, type) => {
     }
     simulateClick(mediaLink);
     await new Promise(resolve => setTimeout(resolve, 3000));
-    
     const mediaItems = [];
     try {
         if (type === 'photo') {
-            // Process photos
             const mediaDivs = document.querySelectorAll('div.x1xsqp64.x18d0r48');
             let itemsProcessed = 0;
             const totalItems = mediaDivs.length;
-            
             for (const div of mediaDivs) {
                 try {
                     const style = div.style.backgroundImage;
                     if (!style || !style.includes('blob:')) continue;
-                    
                     const blobUrl = style.match(/blob:([^"]*)/)[0];
                     const response = await fetch(blobUrl);
                     const blob = await response.blob();
                     const filename = `${chatTitle}-${itemsProcessed + 1}${blob.type.includes('video') ? '.mp4' : '.jpg'}`;
-                    
                     chrome.runtime.sendMessage({
                         action: "downloadMedia",
                         data: {
@@ -445,82 +414,63 @@ const extractMediaContent = async (chatTitle, type) => {
                             type: blob.type
                         }
                     });
-                    
                     mediaItems.push({ type: blob.type.includes('video') ? 'video' : 'image' });
                     itemsProcessed++;
-                    
-                    // Send progress update
                     chrome.runtime.sendMessage({
                         action: "mediaProgress",
                         progress: Math.round((itemsProcessed / totalItems) * 100),
                         chat: chatTitle,
                         mediaCount: itemsProcessed
                     });
-                    
                 } catch (error) {
                     log(`Error processing media item: ${error.message}`);
                 }
             }
-        } else if (type === 'document') {
-            // Process documents
+       }else if (type === 'document') {
             const mediaLink = document.querySelector('button[title="Docs"][role="tab"]');
             simulateClick(mediaLink);
             await new Promise(resolve => setTimeout(resolve, 2000));
-            
             const docContainers = document.querySelectorAll('div[class*="x9f619"][class*="x1u9i22x"]');
             let itemsProcessed = 0;
             const totalItems = docContainers.length;
-            
             for (const container of docContainers) {
                 try {
                     const clickableElement = container.querySelector('div[role="button"][class*="x9f619"][class*="x78zum5"]');
                     if (!clickableElement) continue;
-                    
                     const nameSpan = container.querySelector('span[class*="x13faqbe"]');
                     const docName = nameSpan ? nameSpan.textContent : `document_${itemsProcessed + 1}`;
-                    
                     simulateClick(clickableElement);
                     await new Promise(resolve => setTimeout(resolve, 1500));
-                    
                     mediaItems.push({ type: 'document', name: docName });
                     itemsProcessed++;
-                    
-                    // Send progress update
                     chrome.runtime.sendMessage({
                         action: "mediaProgress",
                         progress: Math.round((itemsProcessed / totalItems) * 100),
                         chat: chatTitle,
                         mediaCount: itemsProcessed
                     });
-                    
                 } catch (error) {
                     log(`Error processing document: ${error.message}`);
                 }
             }
-        } else if (type === 'link') {
-            // Process links
+       }else if (type === 'link') {
             const mediaLink = document.querySelector('button[title="Links"][role="tab"]');
             simulateClick(mediaLink);
             await new Promise(resolve => setTimeout(resolve, 2000));
-            
             const linkElements = document.querySelectorAll('a[href^="http"]');
             const uniqueLinks = new Map();
-            
             linkElements.forEach(element => {
                 const url = element.href;
                 if (!uniqueLinks.has(url)) {
                     uniqueLinks.set(url, element.textContent?.trim() || url);
                 }
             });
-            
             if (uniqueLinks.size > 0) {
                 const linksContent = Array.from(uniqueLinks.entries())
                     .map(([url]) => `${url}\n\n-------------------`)
                     .join('\n\n');
-                
                 const blob = new Blob([linksContent], { type: 'text/plain' });
                 const filename = `${chatTitle}-links.txt`;
-                
                 chrome.runtime.sendMessage({
                     action: "downloadMedia",
                     data: {
@@ -529,10 +479,7 @@ const extractMediaContent = async (chatTitle, type) => {
                         type: 'text/plain'
                     }
                 });
-                
                 mediaItems.push({ type: 'links', count: uniqueLinks.size });
-                
-                // Send progress update for links (100% since it's a single operation)
                 chrome.runtime.sendMessage({
                     action: "mediaProgress",
                     progress: 100,
@@ -545,7 +492,6 @@ const extractMediaContent = async (chatTitle, type) => {
         log(`Error in extractMediaContent: ${error.message}`);
         throw error;
     }
-    
     return mediaItems;
 };
 const extractAndDownloadChat = async (chatTitle) => {
