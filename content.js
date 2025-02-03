@@ -492,6 +492,38 @@ const extractMediaContent = async (chatTitle, type) => {
         log(`Error in extractMediaContent: ${error.message}`);
         throw error;
     }
+    finally {
+        try {
+            log('Starting force cleanup...');
+            
+            // Force ESC key events
+            const sendEsc = () => {
+                document.dispatchEvent(new KeyboardEvent('keydown', {
+                    bubbles: true,
+                    cancelable: true,
+                    key: 'Escape',
+                    code: 'Escape',
+                    keyCode: 27,
+                    which: 27
+                }));
+            };
+
+            // Send multiple ESC events with delays
+            for (let i = 0; i < 3; i++) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                sendEsc();
+            }
+
+            // Click main panel for good measure
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const mainPanel = document.querySelector('#main');
+            if (mainPanel) simulateClick(mainPanel);
+            
+            
+        } catch (closeError) {
+            log(`Error during cleanup: ${closeError.message}`);
+        }
+    }
     return mediaItems;
 };
 const extractAndDownloadChat = async (chatTitle) => {
