@@ -276,3 +276,28 @@ select {
   max-height: calc(100vh - 200px);
   overflow-y: auto;
 }
+
+/* Add to popup.css */
+.loading-circle {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-left: 2px solid #000;
+  border-radius: 50%;
+  animation: appleSpinner 1s linear infinite;
+  z-index: 1000;
+  display: none;
+}
+
+@keyframes appleSpinner {
+  0% { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.loading .loading-circle {
+  display: block;
+}

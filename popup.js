@@ -7,7 +7,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const mainDownload = document.getElementById('mainDownload');
     mainDownload.addEventListener('click', () => {
         document.body.classList.add('loading');
-
+        const loadingCircle = document.createElement('div');
+loadingCircle.className = 'loading-circle';
+document.querySelector('.main-content').appendChild(loadingCircle);
         const loadingOverlay = document.createElement('div');
         loadingOverlay.className = 'loading-overlay';
         document.querySelector('.main-content').appendChild(loadingOverlay);
@@ -138,10 +140,10 @@ function createMessageHandler(loadingFill, completionMessage, buttons, taskName,
             case "exportComplete":
             case "mediaDownloadComplete":
                 document.body.classList.remove('loading');
+    document.querySelector('.main-content').classList.remove('loading');
+    document.querySelector('.loading-overlay')?.remove();
 
 
-
-                document.querySelector('.main-content').classList.remove('loading');
                 document.querySelector('.loading-overlay')?.remove();
                 completionMessage.classList.add('show');
                 if (statusText) {
