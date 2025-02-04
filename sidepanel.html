@@ -1,34 +1,34 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WhatsApp Demon</title>
-    <meta charset="UTF-8">
-    <link rel="stylesheet" href="popup.css">
+   <title>WhatsApp Demon</title>
+   <meta charset="UTF-8">
+   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <audio id="notificationSound" src="notification.wav" preload="auto"></audio>
-    <div class="container">
-        <div class="header">
-            <img src="icons/header.png" alt="Assistant Icon" class="header-icon">
-            <div class="header-text">WhatsApp Demon</div>
-        </div>
+   <audio id="notificationSound" src="notification.wav" preload="auto"></audio>
+   <div class="container">
+       <div class="header">
+           <img src="icons/header.png" alt="Assistant Icon" class="header-icon">
+           <div class="header-text">WhatsApp Demon</div>
+       </div>
 
-        <div class="chat-selection">
-            <div class="chat-selection-header">
-                <span>Select Chats</span>
-                <button id="selectAll">Select All</button>
-            </div>
-            <div id="chatList" class="chat-list"></div>
-        </div>
-        
-        <select id="taskType" style="width: 100%; margin: 10px 0;">
-            <option value="">Select Task</option>
-            <option value="text">Download Messages</option>
-            <option value="photo">Download Photos</option>
-            <option value="document">Download Documents</option>
-            <option value="link">Download Links</option>
-        </select>
-
+       <div class="main-content">
+           <div class="chat-selection">
+               <div class="chat-selection-header">
+                   <span>Select Chats</span>
+                   <button id="selectAll">Select All</button>
+               </div>
+               <div id="chatList" class="chat-list"></div>
+           </div>
+           
+           <select id="taskType" style="width: 100%; margin: 10px 0;">
+               <option value="">Select Task</option>
+               <option value="text">Download Messages</option>
+               <option value="photo">Download Photos</option>
+               <option value="document">Download Documents</option>
+               <option value="link">Download Links</option>
+           </select>
         <div class="task-groups" style="display: none;">
             <div class="task-group" id="text-export">
                 <div class="loading-fill"></div>
@@ -122,6 +122,7 @@
 
         <button id="mainDownload" style="width: 100%; margin: 10px 0;">Download</button>
     </div>
-    <script src="popup.js"></script>
+</div>
+<script src="popup.js"></script>
 </body>
 </html>

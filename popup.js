@@ -6,6 +6,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const mainDownload = document.getElementById('mainDownload');
     mainDownload.addEventListener('click', () => {
+        document.body.classList.add('loading');
+
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'loading-overlay';
+        document.querySelector('.main-content').appendChild(loadingOverlay);
+        document.querySelector('.main-content').classList.add('loading');
         const taskType = document.getElementById('taskType').value;
         if (taskType) {
             const targetButton = document.querySelector(`#${taskType}-export .chat-button`);
@@ -131,8 +137,12 @@ function createMessageHandler(loadingFill, completionMessage, buttons, taskName,
                 break;
             case "exportComplete":
             case "mediaDownloadComplete":
-                loadingFill.style.width = '100%';
-                loadingFill.style.opacity = '0';
+                document.body.classList.remove('loading');
+
+
+
+                document.querySelector('.main-content').classList.remove('loading');
+                document.querySelector('.loading-overlay')?.remove();
                 completionMessage.classList.add('show');
                 if (statusText) {
                     const totalMediaCount = Array.from(totalMediaItems.values()).reduce((sum, count) => sum + count, 0);
