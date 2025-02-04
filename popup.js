@@ -3,6 +3,15 @@ const cleanupPort = chrome.runtime.connect({ name: 'cleanup' });
 
 document.addEventListener('DOMContentLoaded', () => {
     chrome.runtime.sendMessage({ action: 'initializeWhatsApp' });
+    
+    const mainDownload = document.getElementById('mainDownload');
+    mainDownload.addEventListener('click', () => {
+        const taskType = document.getElementById('taskType').value;
+        if (taskType) {
+            const targetButton = document.querySelector(`#${taskType}-export .chat-button`);
+            if (targetButton) targetButton.click();
+        }
+    });
 });
 
 chrome.runtime.onMessage.addListener((message) => {
