@@ -86,7 +86,7 @@ body {
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
-  background: white;
+  background:  #dcf8c6;
   cursor: pointer;
   appearance: none;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -170,7 +170,7 @@ body {
   height: 50px;
   border: none;
   border-radius: 20px;
-  background: #f1f5f9;
+  background:  #dcf8c6;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -182,7 +182,7 @@ body {
 }
 
 #mainDownload:hover:not(:disabled) {
-  background: #e2e8f0;
+  background:  #b3e6cc;
   transform: translateX(-50%) translateY(-2px);
   box-shadow: 0 6px 16px rgba(0,0,0,0.15);
 }
@@ -197,7 +197,7 @@ body {
 }
 
 #mainDownload:disabled {
-  background: #e2e8f0;
+  background:  #dcf8c6;
   cursor: not-allowed;
   opacity: 0.6;
 }
