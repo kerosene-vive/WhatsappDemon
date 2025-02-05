@@ -57,6 +57,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case "getChats":
             sendResponse({ chats: availableChats.map(chat => chat.title) });
             break;
+        case "checkLoginStatus":
+                const qrCode = document.querySelector('div[data-ref]');
+                sendResponse({ needsLogin: !!qrCode });
+                break;
         case "startAutomation":
             if (processingAutomation) {
                 sendResponse({ error: 'Automation already in progress' });
@@ -110,26 +114,38 @@ async function handleMediaDownload(selectedChats, type) {
     }
 }
 
-
+// Modify initialize function
 async function initialize() {
     if (isInitialized) return true;
     if (initializationAttempts >= MAX_INIT_ATTEMPTS) return false;
+    
     initializationAttempts++;
+
     try {
+        const qrCode = document.querySelector('div[data-ref]');
+        if (qrCode) {
+            chrome.runtime.sendMessage({ action: 'whatsappLoginRequired' });
+            return false;
+        }
+
         await verifyEnvironment();
         const response = await new Promise((resolve) => {
             chrome.runtime.sendMessage({ action: 'contentScriptReady' }, resolve);
         });
+
         if (!response || response.status !== 'acknowledged') {
             throw new Error('Initialization not acknowledged');
         }
+
         availableChats = await getChatsList();
         chrome.runtime.sendMessage({ 
             action: 'chatsAvailable', 
             chats: availableChats.map(chat => chat.title)
         });
+
         isInitialized = true;
         return true;
+
     } catch (error) {
         log(`Initialization error: ${error.message}`);
         if (initializationAttempts < MAX_INIT_ATTEMPTS) {
@@ -138,7 +154,6 @@ async function initialize() {
         return false;
     }
 }
-
 
 async function automateWhatsAppExport(selectedChats, includeMedia) {
     try {

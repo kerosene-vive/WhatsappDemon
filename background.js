@@ -87,22 +87,44 @@ async function handleWhatsAppTab(tab, isNew = false) {
         tabStates.set(tab.id, STATES.LOADING);
         if (isNew) {
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.WHATSAPP_LOAD));
+            
+            // Check login status
+            try {
+                const loginStatus = await chrome.tabs.sendMessage(tab.id, { 
+                    action: 'checkLoginStatus' 
+                });
+                
+                if (loginStatus?.needsLogin) {
+                    chrome.runtime.sendMessage({ 
+                        action: 'whatsappLoginRequired' 
+                    });
+                    tabStates.set(tab.id, STATES.LOADING);
+                    return false;
+                }
+            } catch (error) {
+                console.log('Login check failed:', error);
+            }
         }
+ 
         if (!await injectContentScript(tab.id)) {
             throw new Error('Content script injection failed');
         }
+ 
         await new Promise(resolve => setTimeout(resolve, TIMEOUTS.SCRIPT_INIT));
+        
         if (!await verifyContentScript(tab.id)) {
             throw new Error('Content script verification failed');
         }
+ 
         whatsappTabId = tab.id;
         tabStates.set(tab.id, STATES.READY);
         return true;
+ 
     } catch (error) {
         tabStates.set(tab.id, STATES.ERROR);
         throw error;
     }
-}
+ }
 
 
 async function handleWhatsApp() {

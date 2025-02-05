@@ -1,7 +1,40 @@
 let availableChats = [];
 const cleanupPort = chrome.runtime.connect({ name: 'cleanup' });
-
+function createLoadingOverlay(needsLogin = false) {
+    const overlay = document.createElement('div');
+    overlay.className = 'loading-overlay';
+    
+    // Hide elements
+    document.querySelector('.chat-selection')?.classList.add('hidden');
+    document.querySelector('#taskType')?.classList.add('hidden');
+    document.querySelector('.task-groups')?.classList.add('hidden');
+    document.querySelector('#mainDownload')?.classList.add('hidden');
+    
+    if (needsLogin) {
+        const message = document.createElement('div');
+        message.className = 'login-message';
+        message.innerHTML = `
+            <div class="back-arrow">←</div>
+            <h2>Please Log Into WhatsApp</h2>
+            <p>Open WhatsApp on your phone:</p>
+            <ol>
+                <li>Tap Menu or Settings</li>
+                <li>Select Linked Devices</li>
+                <li>Scan the QR code</li>
+            </ol>
+        `;
+        overlay.appendChild(message);
+    } else {
+        const spinner = document.createElement('div');
+        spinner.className = 'loading-spinner';
+        overlay.appendChild(spinner);
+    }
+    
+    document.body.appendChild(overlay);
+    return overlay;
+ }
 document.addEventListener('DOMContentLoaded', () => {
+    const loadingOverlay = createLoadingOverlay();
     chrome.runtime.sendMessage({ action: 'initializeWhatsApp' });
     
     const mainDownload = document.getElementById('mainDownload');
@@ -38,6 +71,10 @@ chrome.runtime.onMessage.addListener((message) => {
             break;
         case 'whatsappClosed':
             location.reload();
+            break;
+        case 'whatsappLoginRequired':
+            document.querySelector('.loading-overlay')?.remove();
+            createLoadingOverlay(true);
             break;
     }
 });
