@@ -1,6 +1,8 @@
 let isInitialized = false;
 let initializationAttempts = 0;
 const MAX_INIT_ATTEMPTS = 5;
+let debugSkipQRCheck = true; // Skip QR check during development
+
 const SELECTORS = {
     CHAT_LIST: {
         container: '#pane-side',
@@ -114,38 +116,60 @@ async function handleMediaDownload(selectedChats, type) {
     }
 }
 
-// Modify initialize function
 async function initialize() {
     if (isInitialized) return true;
     if (initializationAttempts >= MAX_INIT_ATTEMPTS) return false;
     
     initializationAttempts++;
-
+ 
     try {
         const qrCode = document.querySelector('div[data-ref]');
-        if (qrCode) {
+        const chatList = document.querySelector('#pane-side');
+        
+        if (qrCode && !chatList) {
             chrome.runtime.sendMessage({ action: 'whatsappLoginRequired' });
+            // Keep checking while QR code is present
+            setTimeout(() => {
+                initializationAttempts--; // Don't count retries while QR code is present
+                initialize();
+            }, 1000);
             return false;
         }
-
+ 
         await verifyEnvironment();
+        
+        // Wait for chat list to appear
+        const chatListLoaded = await waitForElement('#pane-side', 10000).catch(() => null);
+        if (!chatListLoaded) {
+            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
+            return false;
+        }
+ 
         const response = await new Promise((resolve) => {
             chrome.runtime.sendMessage({ action: 'contentScriptReady' }, resolve);
         });
-
+ 
         if (!response || response.status !== 'acknowledged') {
             throw new Error('Initialization not acknowledged');
         }
-
+ 
+        // Get chats only after we're sure WhatsApp is loaded
+        await new Promise(resolve => setTimeout(resolve, 2000));
         availableChats = await getChatsList();
+        
+        if (availableChats.length === 0) {
+            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
+            return false;
+        }
+ 
         chrome.runtime.sendMessage({ 
             action: 'chatsAvailable', 
             chats: availableChats.map(chat => chat.title)
         });
-
+ 
         isInitialized = true;
         return true;
-
+ 
     } catch (error) {
         log(`Initialization error: ${error.message}`);
         if (initializationAttempts < MAX_INIT_ATTEMPTS) {
@@ -153,7 +177,7 @@ async function initialize() {
         }
         return false;
     }
-}
+ }
 
 async function automateWhatsAppExport(selectedChats, includeMedia) {
     try {

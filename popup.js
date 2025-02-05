@@ -58,6 +58,9 @@ document.querySelector('.main-content').appendChild(loadingCircle);
 chrome.runtime.onMessage.addListener((message) => {
     switch (message.action) {
         case 'whatsappReady':
+            document.querySelector('.loading-overlay')?.remove(); // Remove login overlay
+            createLoadingOverlay(false); // Show loading spinner
+
             chrome.runtime.sendMessage({ action: 'getChats' }, response => {
                 if (response.chats) {
                     availableChats = response.chats;
@@ -68,6 +71,7 @@ chrome.runtime.onMessage.addListener((message) => {
         case 'chatsAvailable':
             availableChats = message.chats;
             updateChatSelection();
+            document.querySelector('.loading-overlay')?.remove();
             break;
         case 'whatsappClosed':
             location.reload();
@@ -78,7 +82,6 @@ chrome.runtime.onMessage.addListener((message) => {
             break;
     }
 });
-
 function updateChatSelection() {
     const container = document.querySelector('.chat-selection') || createChatSelectionUI();
     container.innerHTML = availableChats.map(chat => `
@@ -88,6 +91,13 @@ function updateChatSelection() {
         </div>
     `).join('');
     document.querySelector('.loading-overlay')?.remove();
+    
+    // Unhide elements
+    document.querySelector('.chat-selection')?.classList.remove('hidden');
+    document.querySelector('#taskType')?.classList.remove('hidden');
+    document.querySelector('.task-groups')?.classList.remove('hidden');
+    document.querySelector('#mainDownload')?.classList.remove('hidden');
+    
     initializeButtons();
 }
 
