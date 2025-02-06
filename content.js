@@ -844,25 +844,28 @@ const findAndClickTab = async (type) => {
     return false;
 };
 
-SELECTORS.MEDIA_ELEMENTS.documents = `[data-icon="document"],[data-testid="document-thumb"],[data-testid="document"],div[class*="document"],div._3_qAu,div[role="row"]:has(span[data-icon="document"])`;
+SELECTORS.MEDIA_ELEMENTS.documents = `[role="button"][title*="Download"], .x78zum5[title*="Download"], .icon-doc-pdf, [data-testid="document-thumb"]`;
 
 async function processDocuments(container) {
-    const docContainer = container.closest('[role="row"]') || container;
-    const downloadButton = docContainer.querySelector('[data-testid="download"], [data-icon="download"]') ||
-                         docContainer.querySelector('span[data-icon="download"]') ||
-                         docContainer.querySelector('div[role="button"]');
-
+    const downloadButton = container.closest('[role="button"][title*="Download"]') || container;
+    
     if (downloadButton) {
-        const downloadEvents = ['mouseover', 'mousedown', 'mouseup', 'click'];
-        for (const eventType of downloadEvents) {
+        const events = ['mouseover', 'mousedown', 'mouseup', 'click'];
+        const rect = downloadButton.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        for (const eventType of events) {
             downloadButton.dispatchEvent(new MouseEvent(eventType, {
                 bubbles: true,
                 cancelable: true,
-                view: window
+                view: window,
+                clientX: centerX,
+                clientY: centerY
             }));
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 200));
         }
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 2500));
         return true;
     }
     return false;
@@ -881,8 +884,8 @@ async function scrollAndCollectMedia(type) {
         if (type === 'documents') {
             const docElements = document.querySelectorAll(SELECTORS.MEDIA_ELEMENTS.documents);
             docElements.forEach(el => {
-                const docContainer = el.closest('[role="row"]') || el;
-                if (docContainer) mediaItems.add(docContainer);
+                const downloadButton = el.closest('[role="button"][title*="Download"]') || el;
+                if (downloadButton) mediaItems.add(downloadButton);
             });
         } else {
             const elements = document.querySelectorAll(SELECTORS.MEDIA_ELEMENTS[type]);
@@ -901,8 +904,8 @@ async function scrollAndCollectMedia(type) {
             });
         }
 
-        container.scrollTop += type === 'documents' ? 1000 : 500;
-        await new Promise(resolve => setTimeout(resolve, 800));
+        container.scrollTop += 1000;
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         if (container.scrollHeight === lastHeight) {
             unchangedCount++;
@@ -915,7 +918,6 @@ async function scrollAndCollectMedia(type) {
 
     return Array.from(mediaItems);
 }
-
 
 const processLinks = async (chatTitle, mediaItems) => {
     try {
