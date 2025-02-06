@@ -31,6 +31,12 @@ const SELECTORS = {
         title: 'span[dir="auto"]',
         item: 'div._ak8l',
         scrollContainer: 'div[tabindex="0"][role="application"]'
+    },
+    MEDIA_ELEMENTS: {
+        images: 'img[src^="blob:"], div[style*="background-image"][role="button"]',
+        videos: 'video[src^="blob:"]',
+        documents: '[data-icon="document"], div[data-testid="document-thumb"]',
+        links: 'a[href^="http"], [data-testid="link"], div[role="link"]'
     }
 };
 const TIMEOUTS = {
@@ -253,45 +259,7 @@ const WhatsAppNavigator = {
         }
     }
 };
-const extractMediaContent = async (chatTitle, type) => {
-    const mediaItems = [];
-    try {
-        await WhatsAppNavigator.navigateToMedia(type);
-        await new Promise(resolve => setTimeout(resolve, 3000));
 
-        if (type === 'photo') {
-            const mediaDivs = await findMediaElements();
-            let itemsProcessed = 0;
-            const totalItems = mediaDivs.length;
-
-            for (const div of mediaDivs) {
-                try {
-                    const mediaUrl = await extractMediaUrl(div);
-                    if (!mediaUrl) continue;
-
-                    const { blob, filename } = await processMediaItem(mediaUrl, chatTitle, itemsProcessed);
-                    await downloadMedia(blob, filename);
-                    
-                    mediaItems.push({ type: blob.type.includes('video') ? 'video' : 'image' });
-                    itemsProcessed++;
-                    updateProgress(itemsProcessed, totalItems, chatTitle);
-                } catch (error) {
-                    console.error(`Error processing media item: ${error.message}`);
-                }
-            }
-        } else if (type === 'document') {
-            await processDocuments(chatTitle, mediaItems);
-        } else if (type === 'link') {
-            await processLinks(chatTitle, mediaItems);
-        }
-    } catch (error) {
-        console.error(`Error in extractMediaContent: ${error.message}`);
-        throw error;
-    } finally {
-        await cleanup();
-    }
-    return mediaItems;
-};
 const findMediaElements = async () => {
     const selectors = [
         'div.x1xsqp64.x18d0r48',
@@ -328,13 +296,7 @@ const extractMediaUrl = async (div) => {
 
     return null;
 };
-const processMediaItem = async (url, chatTitle, index) => {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const extension = blob.type.includes('video') ? '.mp4' : '.jpg';
-    const filename = `${chatTitle}-${index + 1}${extension}`;
-    return { blob, filename };
-};
+
 const downloadMedia = async (blob, filename) => {
     chrome.runtime.sendMessage({
         action: "downloadMedia",
@@ -467,27 +429,124 @@ async function initialize() {
         return false;
     }
  }
+
+
+
+
+async function processMediaItem(url, chatTitle, index, type) {
+    try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        let extension;
+        
+        switch(type) {
+            case 'images':
+                extension = '.jpg';
+                break;
+            case 'videos':
+                extension = '.mp4';
+                break;
+            default:
+                extension = '';
+        }
+
+        const filename = `${chatTitle}-${type}-${index + 1}${extension}`;
+        return { blob, filename };
+    } catch (error) {
+        log(`Error processing ${type} item: ${error.message}`);
+        return null;
+    }
+}
+
+async function extractMediaContent(chatTitle) {
+    const allMedia = {
+        images: [],
+        videos: [],
+        documents: [],
+        links: []
+    };
+
+    try {
+        // Scroll to top first
+        await scrollChatToTop();
+
+        // Collect all types of media
+        for (const type of Object.keys(allMedia)) {
+            const items = await scrollAndCollectMedia(type);
+            log(`Found ${items.length} ${type}`);
+
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                
+                switch(type) {
+                    case 'images':
+                    case 'videos':
+                        const processed = await processMediaItem(item, chatTitle, i, type);
+                        if (processed) {
+                            await downloadMedia(processed.blob, processed.filename);
+                            allMedia[type].push({ type, url: item });
+                        }
+                        break;
+                        
+                    case 'documents':
+                        const downloadButton = await findDownloadButton(item);
+                        if (downloadButton) {
+                            await WhatsAppNavigator.simulateNaturalClick(downloadButton);
+                            allMedia.documents.push({ type: 'document' });
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                        break;
+                        
+                    case 'links':
+                        allMedia.links.push(item);
+                        break;
+                }
+
+                updateProgress(i + 1, items.length, chatTitle);
+            }
+        }
+
+        // Save links to a file if any were found
+        if (allMedia.links.length > 0) {
+            const content = allMedia.links.join('\n\n-------------------\n\n');
+            const blob = new Blob([content], { type: 'text/plain' });
+            await downloadMedia(blob, `${chatTitle}-links.txt`);
+        }
+
+    } catch (error) {
+        log(`Error in extractMediaContent: ${error.message}`);
+        throw error;
+    }
+
+    return Object.values(allMedia).flat();
+}
+
 async function automateWhatsAppExport(selectedChats, includeMedia) {
     try {
         for (let chatTitle of selectedChats) {
             const chat = availableChats.find(c => c.title === chatTitle);
             if (!chat) continue;
+
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(chat.clickableElement);
             await waitForElement(SELECTORS.CHAT.messageContainer);
+
             if (includeMedia) {
-                const mediaType = typeof includeMedia === 'string' ? includeMedia : 'photo';
-                await extractMediaContent(chatTitle, mediaType);
+                const mediaContent = await extractMediaContent(chatTitle);
+                log(`Extracted media from: ${chatTitle} - Found ${mediaContent.length} items`);
             } else {
                 const filename = await extractAndDownloadChat(chatTitle);
                 log(`Downloaded chat: ${filename}`);
-                chrome.runtime.sendMessage({ 
-                    action: "chatProgress", 
-                    progress: Math.round((selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100),
-                    chatTitle 
-                });
             }
-        }    
+
+            chrome.runtime.sendMessage({ 
+                action: includeMedia ? "mediaProgress" : "chatProgress",
+                progress: Math.round((selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100),
+                chat: chatTitle,
+                mediaCount: includeMedia ? mediaContent?.length : 0
+            });
+        }
+
         chrome.runtime.sendMessage({ 
             action: includeMedia ? "mediaDownloadComplete" : "exportComplete",
             message: `Successfully processed ${selectedChats.length} chats`
@@ -785,37 +844,78 @@ const findAndClickTab = async (type) => {
     return false;
 };
 
-const processDocuments = async (chatTitle, mediaItems) => {
-    try {
-        if (!await findAndClickTab('document')) {
-            throw new Error('Could not find documents tab');
+SELECTORS.MEDIA_ELEMENTS.documents = `[data-icon="document"],[data-testid="document-thumb"],[data-testid="document"],div[class*="document"],div._3_qAu,div[role="row"]:has(span[data-icon="document"])`;
+
+async function processDocuments(container) {
+    const docContainer = container.closest('[role="row"]') || container;
+    const downloadButton = docContainer.querySelector('[data-testid="download"], [data-icon="download"]') ||
+                         docContainer.querySelector('span[data-icon="download"]') ||
+                         docContainer.querySelector('div[role="button"]');
+
+    if (downloadButton) {
+        const downloadEvents = ['mouseover', 'mousedown', 'mouseup', 'click'];
+        for (const eventType of downloadEvents) {
+            downloadButton.dispatchEvent(new MouseEvent(eventType, {
+                bubbles: true,
+                cancelable: true,
+                view: window
+            }));
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
         await new Promise(resolve => setTimeout(resolve, 2000));
-
-        const docContainers = await findDocumentContainers();
-        if (!docContainers.length) {
-            log('No documents found');
-            return;
-        }
-
-        let itemsProcessed = 0;
-        for (const container of docContainers) {
-            try {
-                const downloadButton = await findDownloadButton(container);
-                if (downloadButton) {
-                    await WhatsAppNavigator.simulateNaturalClick(downloadButton);
-                    itemsProcessed++;
-                    updateProgress(itemsProcessed, docContainers.length, chatTitle);
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-            } catch (error) {
-                log(`Error processing document: ${error.message}`);
-            }
-        }
-    } catch (error) {
-        log(`Error in processDocuments: ${error.message}`);
+        return true;
     }
-};
+    return false;
+}
+
+async function scrollAndCollectMedia(type) {
+    const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
+    if (!container) throw new Error('Could not find scroll container');
+
+    const mediaItems = new Set();
+    let lastHeight = 0;
+    let unchangedCount = 0;
+    const maxUnchangedCount = 3;
+
+    for (let i = 0; i < 30; i++) {
+        if (type === 'documents') {
+            const docElements = document.querySelectorAll(SELECTORS.MEDIA_ELEMENTS.documents);
+            docElements.forEach(el => {
+                const docContainer = el.closest('[role="row"]') || el;
+                if (docContainer) mediaItems.add(docContainer);
+            });
+        } else {
+            const elements = document.querySelectorAll(SELECTORS.MEDIA_ELEMENTS[type]);
+            elements.forEach(element => {
+                switch(type) {
+                    case 'images':
+                    case 'videos':
+                        const url = element.src || element.style.backgroundImage?.match(/url\("(.+)"\)/)?.[1];
+                        if (url?.startsWith('blob:')) mediaItems.add(url);
+                        break;
+                    case 'links':
+                        const link = element.href || element.getAttribute('data-url');
+                        if (link?.startsWith('http')) mediaItems.add(link);
+                        break;
+                }
+            });
+        }
+
+        container.scrollTop += type === 'documents' ? 1000 : 500;
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        if (container.scrollHeight === lastHeight) {
+            unchangedCount++;
+            if (unchangedCount >= maxUnchangedCount) break;
+        } else {
+            unchangedCount = 0;
+            lastHeight = container.scrollHeight;
+        }
+    }
+
+    return Array.from(mediaItems);
+}
+
 
 const processLinks = async (chatTitle, mediaItems) => {
     try {
