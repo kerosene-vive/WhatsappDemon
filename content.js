@@ -82,8 +82,298 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     return true;
 });
+const WhatsAppNavigator = {
+    async findElementByContent(searchText, options = {}) {
+        const {
+            role = 'button',
+            maxDepth = 4,
+            timeout = 5000,
+            partial = true
+        } = options;
 
+        const normalizedSearch = searchText.toLowerCase();
+        const startTime = Date.now();
 
+        while (Date.now() - startTime < timeout) {
+            const elements = document.querySelectorAll(`[role="${role}"], [aria-label*="${searchText}"], [title*="${searchText}"]`);
+            
+            for (const element of elements) {
+                const text = element.textContent.toLowerCase();
+                if (partial ? text.includes(normalizedSearch) : text === normalizedSearch) {
+                    return element;
+                }
+
+                // Check nested spans
+                const nestedText = Array.from(element.querySelectorAll('span'))
+                    .map(span => span.textContent.toLowerCase())
+                    .join(' ');
+                
+                if (partial ? nestedText.includes(normalizedSearch) : nestedText === normalizedSearch) {
+                    return element;
+                }
+            }
+
+            // Traverse DOM for deeply nested content
+            const findInNode = (node, depth = 0) => {
+                if (depth > maxDepth) return null;
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const text = node.textContent.toLowerCase();
+                    return partial ? text.includes(normalizedSearch) : text === normalizedSearch;
+                }
+                for (const child of node.childNodes) {
+                    if (findInNode(child, depth + 1)) {
+                        return node.closest(`[role="${role}"]`) || node;
+                    }
+                }
+                return null;
+            };
+
+            const result = findInNode(document.body);
+            if (result) return result;
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        return null;
+    },
+
+    async clickPath(steps) {
+        for (const step of steps) {
+            const {
+                text,
+                alternativeText = [],
+                timeout = 5000,
+                waitAfterClick = 1000,
+                required = true
+            } = typeof step === 'string' ? { text: step } : step;
+
+            const searchTexts = [text, ...alternativeText];
+            let element = null;
+
+            for (const searchText of searchTexts) {
+                element = await this.findElementByContent(searchText, { timeout });
+                if (element) break;
+            }
+
+            if (!element && required) {
+                throw new Error(`Failed to find element containing: ${searchTexts.join(' or ')}`);
+            }
+
+            if (element) {
+                await this.simulateNaturalClick(element);
+                await new Promise(resolve => setTimeout(resolve, waitAfterClick));
+            }
+        }
+    },
+
+    async simulateNaturalClick(element) {
+        const rect = element.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        // Add slight randomization to appear more natural
+        const offsetX = Math.random() * 6 - 3;
+        const offsetY = Math.random() * 6 - 3;
+
+        const events = [
+            new MouseEvent('mouseover', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: centerX + offsetX,
+                clientY: centerY + offsetY
+            }),
+            new MouseEvent('mousedown', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: centerX + offsetX,
+                clientY: centerY + offsetY
+            }),
+            new MouseEvent('mouseup', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: centerX + offsetX,
+                clientY: centerY + offsetY
+            }),
+            new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: centerX + offsetX,
+                clientY: centerY + offsetY
+            })
+        ];
+
+        for (const event of events) {
+            element.dispatchEvent(event);
+            await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 50));
+        }
+    },
+
+    async navigateToMedia(type = 'photo') {
+        const navigationSteps = [
+            {
+                text: 'Menu',
+                alternativeText: ['More options', 'Additional options'],
+                waitAfterClick: 1500
+            },
+            {
+                text: 'info',
+                alternativeText: ['Contact info', 'Group info', 'Information'],
+                waitAfterClick: 1500
+            },
+            {
+                text: 'Media',
+                alternativeText: ['Media, links and docs', 'Photos and videos'],
+                waitAfterClick: 1500
+            }
+        ];
+
+        try {
+            await this.clickPath(navigationSteps);
+        } catch (error) {
+            // Fallback: Try direct media tab access
+            const mediaSelectors = [
+                '[data-testid="media-gallery"]',
+                '[data-testid="row-video"]',
+                'div[role="button"]:has(span:contains("Media"))',
+                'div[title*="Media"]'
+            ];
+
+            for (const selector of mediaSelectors) {
+                const element = document.querySelector(selector);
+                if (element) {
+                    await this.simulateNaturalClick(element);
+                    return;
+                }
+            }
+
+            throw new Error('Failed to navigate to media section');
+        }
+    }
+};
+const extractMediaContent = async (chatTitle, type) => {
+    const mediaItems = [];
+    try {
+        await WhatsAppNavigator.navigateToMedia(type);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        if (type === 'photo') {
+            const mediaDivs = await findMediaElements();
+            let itemsProcessed = 0;
+            const totalItems = mediaDivs.length;
+
+            for (const div of mediaDivs) {
+                try {
+                    const mediaUrl = await extractMediaUrl(div);
+                    if (!mediaUrl) continue;
+
+                    const { blob, filename } = await processMediaItem(mediaUrl, chatTitle, itemsProcessed);
+                    await downloadMedia(blob, filename);
+                    
+                    mediaItems.push({ type: blob.type.includes('video') ? 'video' : 'image' });
+                    itemsProcessed++;
+                    updateProgress(itemsProcessed, totalItems, chatTitle);
+                } catch (error) {
+                    console.error(`Error processing media item: ${error.message}`);
+                }
+            }
+        } else if (type === 'document') {
+            await processDocuments(chatTitle, mediaItems);
+        } else if (type === 'link') {
+            await processLinks(chatTitle, mediaItems);
+        }
+    } catch (error) {
+        console.error(`Error in extractMediaContent: ${error.message}`);
+        throw error;
+    } finally {
+        await cleanup();
+    }
+    return mediaItems;
+};
+const findMediaElements = async () => {
+    const selectors = [
+        'div.x1xsqp64.x18d0r48',
+        'div[role="button"][data-testid="media-canvas"]',
+        'div[role="button"]:has(img[src^="blob"])',
+        'div[style*="background-image"][role="button"]'
+    ];
+
+    for (const selector of selectors) {
+        const elements = document.querySelectorAll(selector);
+        if (elements.length > 0) return Array.from(elements);
+    }
+    
+    throw new Error('No media elements found');
+};
+const extractMediaUrl = async (div) => {
+    // Try background image
+    const bgStyle = div.style.backgroundImage;
+    if (bgStyle?.includes('blob:')) {
+        return bgStyle.match(/blob:([^"]*)/)[0];
+    }
+
+    // Try image or video element
+    const mediaElement = div.querySelector('img[src^="blob"], video[src^="blob"]');
+    if (mediaElement?.src) {
+        return mediaElement.src;
+    }
+
+    // Try data attributes
+    const blobUrl = div.dataset.blobUrl || div.querySelector('[data-blob-url]')?.dataset.blobUrl;
+    if (blobUrl?.startsWith('blob:')) {
+        return blobUrl;
+    }
+
+    return null;
+};
+const processMediaItem = async (url, chatTitle, index) => {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const extension = blob.type.includes('video') ? '.mp4' : '.jpg';
+    const filename = `${chatTitle}-${index + 1}${extension}`;
+    return { blob, filename };
+};
+const downloadMedia = async (blob, filename) => {
+    chrome.runtime.sendMessage({
+        action: "downloadMedia",
+        data: {
+            url: URL.createObjectURL(blob),
+            filename: filename,
+            type: blob.type
+        }
+    });
+};
+const updateProgress = (current, total, chatTitle) => {
+    chrome.runtime.sendMessage({
+        action: "mediaProgress",
+        progress: Math.round((current / total) * 100),
+        chat: chatTitle,
+        mediaCount: current
+    });
+};
+
+const cleanup = async () => {
+    try {
+        for (let i = 0; i < 3; i++) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            document.dispatchEvent(new KeyboardEvent('keydown', {
+                bubbles: true,
+                cancelable: true,
+                key: 'Escape',
+                code: 'Escape'
+            }));
+        }
+
+        const mainPanel = document.querySelector('#main');
+        if (mainPanel) {
+            await WhatsAppNavigator.simulateNaturalClick(mainPanel);
+        }
+    } catch (error) {
+        console.error(`Error during cleanup: ${error.message}`);
+    }
+};
 async function handleMediaDownload(selectedChats, type) {
     if (processingAutomation) {
         throw new Error('Automation already in progress');
@@ -115,7 +405,6 @@ async function handleMediaDownload(selectedChats, type) {
         processingAutomation = false;
     }
 }
-
 async function initialize() {
     if (isInitialized) return true;
     if (initializationAttempts >= MAX_INIT_ATTEMPTS) return false;
@@ -178,7 +467,6 @@ async function initialize() {
         return false;
     }
  }
-
 async function automateWhatsAppExport(selectedChats, includeMedia) {
     try {
         for (let chatTitle of selectedChats) {
@@ -388,175 +676,6 @@ const extractChatContent = () => {
     });
     return content;
 };
-const downloadMedia = async (mediaElement, type, timestamp, chatTitle, index) => {
-    return new Promise(async (resolve, reject) => {
-        try {
-            if (!mediaElement.src) {
-                reject(new Error('No source found for media element'));
-                return;
-            }
-            const response = await fetch(mediaElement.src);
-            const blob = await response.blob();
-            const extension = type.startsWith('image') ? '.jpg' : 
-                            type.startsWith('video') ? '.mp4' : '.bin';
-            const filename = `photo_${chatTitle}${index}${extension}`;
-            chrome.runtime.sendMessage({
-                action: "downloadMedia",
-                data: {
-                    url: URL.createObjectURL(blob),
-                    filename: filename,
-                    type: type
-                }
-            });
-            resolve(filename);
-        } catch (error) {
-            reject(error);
-        }
-    });
-};
-const extractMediaContent = async (chatTitle, type) => {
-    await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIA_LOAD));
-    const menuButton = document.querySelector('.xr9ek0c');
-    if (!menuButton) throw new Error('Could not find menu button');
-    simulateClick(menuButton);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const infoButton = document.querySelector('div[aria-label*="info"]');
-    if (!infoButton) throw new Error('Could not find info button');
-    simulateClick(infoButton);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const mediaLink = document.querySelector('div.x12lumcd span.x1xhoq4m');
-    if (!mediaLink) {
-        log('No media section found, continuing...');
-        return [];
-    }
-    simulateClick(mediaLink);
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    const mediaItems = [];
-    try {
-        if (type === 'photo') {
-            const mediaDivs = document.querySelectorAll('div.x1xsqp64.x18d0r48');
-            let itemsProcessed = 0;
-            const totalItems = mediaDivs.length;
-            for (const div of mediaDivs) {
-                try {
-                    const style = div.style.backgroundImage;
-                    if (!style || !style.includes('blob:')) continue;
-                    const blobUrl = style.match(/blob:([^"]*)/)[0];
-                    const response = await fetch(blobUrl);
-                    const blob = await response.blob();
-                    const filename = `${chatTitle}-${itemsProcessed + 1}${blob.type.includes('video') ? '.mp4' : '.jpg'}`;
-                    chrome.runtime.sendMessage({
-                        action: "downloadMedia",
-                        data: {
-                            url: URL.createObjectURL(blob),
-                            filename: filename,
-                            type: blob.type
-                        }
-                    });
-                    mediaItems.push({ type: blob.type.includes('video') ? 'video' : 'image' });
-                    itemsProcessed++;
-                    chrome.runtime.sendMessage({
-                        action: "mediaProgress",
-                        progress: Math.round((itemsProcessed / totalItems) * 100),
-                        chat: chatTitle,
-                        mediaCount: itemsProcessed
-                    });
-                } catch (error) {
-                    log(`Error processing media item: ${error.message}`);
-                }
-            }
-       }else if (type === 'document') {
-            const mediaLink = document.querySelector('button[title="Docs"][role="tab"]');
-            simulateClick(mediaLink);
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            const docContainers = document.querySelectorAll('div[class*="x9f619"][class*="x1u9i22x"]');
-            let itemsProcessed = 0;
-            const totalItems = docContainers.length;
-            for (const container of docContainers) {
-                try {
-                    const clickableElement = container.querySelector('div[role="button"][class*="x9f619"][class*="x78zum5"]');
-                    if (!clickableElement) continue;
-                    const nameSpan = container.querySelector('span[class*="x13faqbe"]');
-                    const docName = nameSpan ? nameSpan.textContent : `document_${itemsProcessed + 1}`;
-                    simulateClick(clickableElement);
-                    await new Promise(resolve => setTimeout(resolve, 1500));
-                    mediaItems.push({ type: 'document', name: docName });
-                    itemsProcessed++;
-                    chrome.runtime.sendMessage({
-                        action: "mediaProgress",
-                        progress: Math.round((itemsProcessed / totalItems) * 100),
-                        chat: chatTitle,
-                        mediaCount: itemsProcessed
-                    });
-                } catch (error) {
-                    log(`Error processing document: ${error.message}`);
-                }
-            }
-       }else if (type === 'link') {
-            const mediaLink = document.querySelector('button[title="Links"][role="tab"]');
-            simulateClick(mediaLink);
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            const linkElements = document.querySelectorAll('a[href^="http"]');
-            const uniqueLinks = new Map();
-            linkElements.forEach(element => {
-                const url = element.href;
-                if (!uniqueLinks.has(url)) {
-                    uniqueLinks.set(url, element.textContent?.trim() || url);
-                }
-            });
-            if (uniqueLinks.size > 0) {
-                const linksContent = Array.from(uniqueLinks.entries())
-                    .map(([url]) => `${url}\n\n-------------------`)
-                    .join('\n\n');
-                const blob = new Blob([linksContent], { type: 'text/plain' });
-                const filename = `${chatTitle}-links.txt`;
-                chrome.runtime.sendMessage({
-                    action: "downloadMedia",
-                    data: {
-                        url: URL.createObjectURL(blob),
-                        filename: filename,
-                        type: 'text/plain'
-                    }
-                });
-                mediaItems.push({ type: 'links', count: uniqueLinks.size });
-                chrome.runtime.sendMessage({
-                    action: "mediaProgress",
-                    progress: 100,
-                    chat: chatTitle,
-                    mediaCount: uniqueLinks.size
-                });
-            }
-        }
-    } catch (error) {
-        log(`Error in extractMediaContent: ${error.message}`);
-        throw error;
-    }
-    finally {
-        try {
-            log('Starting force cleanup...');
-            const sendEsc = () => {
-                document.dispatchEvent(new KeyboardEvent('keydown', {
-                    bubbles: true,
-                    cancelable: true,
-                    key: 'Escape',
-                    code: 'Escape',
-                    keyCode: 27,
-                    which: 27
-                }));
-            };
-            for (let i = 0; i < 3; i++) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                sendEsc();
-            }
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            const mainPanel = document.querySelector('#main');
-            if (mainPanel) simulateClick(mainPanel);
-        } catch (closeError) {
-            log(`Error during cleanup: ${closeError.message}`);
-        }
-    }
-    return mediaItems;
-};
 const extractAndDownloadChat = async (chatTitle) => {
     await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MESSAGE_LOAD));
     await scrollChatToTop();
@@ -595,6 +714,192 @@ const extractAndDownloadChat = async (chatTitle) => {
     return filename;
 };
 
+const findAndClickTab = async (type) => {
+    const tabSearchPatterns = {
+        'document': {
+            selectors: [
+                'button[title="Docs"][role="tab"]',
+                'button[aria-label*="Document"]',
+                '[data-testid="document-tab"]',
+                '[data-tab="documents"]'
+            ],
+            textPatterns: ['Docs', 'Documents', 'Files', 'DOC']
+        },
+        'link': {
+            selectors: [
+                'button[title="Links"][role="tab"]',
+                'button[aria-label*="Link"]',
+                '[data-testid="link-tab"]',
+                '[data-tab="links"]'
+            ],
+            textPatterns: ['Links', 'URLs', 'Web Links']
+        }
+    };
 
+    const patterns = tabSearchPatterns[type];
+    if (!patterns) return false;
+
+    // Try direct selectors first
+    for (const selector of patterns.selectors) {
+        const element = document.querySelector(selector);
+        if (element) {
+            await WhatsAppNavigator.simulateNaturalClick(element);
+            return true;
+        }
+    }
+
+    // Try finding by text content
+    for (const text of patterns.textPatterns) {
+        const buttons = Array.from(document.querySelectorAll('button, [role="tab"]'));
+        const button = buttons.find(b => b.textContent?.includes(text));
+        if (button) {
+            await WhatsAppNavigator.simulateNaturalClick(button);
+            return true;
+        }
+    }
+
+    // Deep DOM search
+    const deepSearchResult = await WhatsAppNavigator.findElementByContent(patterns.textPatterns[0], {
+        role: 'tab',
+        maxDepth: 6,
+        timeout: 3000,
+        partial: true
+    });
+
+    if (deepSearchResult) {
+        await WhatsAppNavigator.simulateNaturalClick(deepSearchResult);
+        return true;
+    }
+
+    // Last resort: find any clickable element containing the text
+    const allElements = document.querySelectorAll('[role="button"], button, [class*="tab"]');
+    for (const text of patterns.textPatterns) {
+        for (const element of allElements) {
+            if (element.textContent?.toLowerCase().includes(text.toLowerCase())) {
+                await WhatsAppNavigator.simulateNaturalClick(element);
+                return true;
+            }
+        }
+    }
+
+    return false;
+};
+
+const processDocuments = async (chatTitle, mediaItems) => {
+    try {
+        if (!await findAndClickTab('document')) {
+            throw new Error('Could not find documents tab');
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const docContainers = await findDocumentContainers();
+        if (!docContainers.length) {
+            log('No documents found');
+            return;
+        }
+
+        let itemsProcessed = 0;
+        for (const container of docContainers) {
+            try {
+                const downloadButton = await findDownloadButton(container);
+                if (downloadButton) {
+                    await WhatsAppNavigator.simulateNaturalClick(downloadButton);
+                    itemsProcessed++;
+                    updateProgress(itemsProcessed, docContainers.length, chatTitle);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            } catch (error) {
+                log(`Error processing document: ${error.message}`);
+            }
+        }
+    } catch (error) {
+        log(`Error in processDocuments: ${error.message}`);
+    }
+};
+
+const processLinks = async (chatTitle, mediaItems) => {
+    try {
+        if (!await findAndClickTab('link')) {
+            throw new Error('Could not find links tab');
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const links = new Set();
+        const linkSelectors = [
+            'a[href^="http"]',
+            '[data-testid="link"]',
+            'div[role="link"]',
+            '[class*="link-preview"]'
+        ];
+
+        for (const selector of linkSelectors) {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(element => {
+                const url = element.href || element.getAttribute('data-url') || element.getAttribute('href');
+                if (url?.startsWith('http')) {
+                    links.add(url);
+                }
+            });
+        }
+
+        if (links.size > 0) {
+            const content = Array.from(links)
+                .map(url => `${url}\n\n-------------------`)
+                .join('\n\n');
+            const blob = new Blob([content], { type: 'text/plain' });
+            await downloadMedia(blob, `${chatTitle}-links.txt`);
+            mediaItems.push({ type: 'links', count: links.size });
+            updateProgress(1, 1, chatTitle);
+        }
+    } catch (error) {
+        log(`Error in processLinks: ${error.message}`);
+    }
+};
+
+const findDocumentContainers = async () => {
+    const containerSelectors = [
+        'div[data-testid="document-thumb"]',
+        'div[role="gridcell"]',
+        'div[data-icon="document"]',
+        'div[class*="document"]',
+        'div[class*="x9f619"][class*="x1u9i22x"]',
+        'div[class*="x78zum5"]'
+    ];
+
+    for (const selector of containerSelectors) {
+        const containers = document.querySelectorAll(selector);
+        if (containers.length > 0) return Array.from(containers);
+    }
+
+    // Fallback: find by content patterns
+    const documentPatterns = ['PDF', '.pdf', '.doc', '.docx', '.txt'];
+    const allElements = document.querySelectorAll('div[role="gridcell"], div[role="row"]');
+    return Array.from(allElements).filter(el => 
+        documentPatterns.some(pattern => 
+            el.textContent?.toLowerCase().includes(pattern.toLowerCase())
+        )
+    );
+};
+
+const findDownloadButton = async (container) => {
+    const downloadSelectors = [
+        'span[data-icon="download"]',
+        'button[aria-label*="Download"]',
+        'div[role="button"]:has(span[data-icon="download"])',
+        'div[title*="Download"]',
+        '[data-testid="download"]'
+    ];
+
+    for (const selector of downloadSelectors) {
+        const button = container.querySelector(selector) || document.querySelector(selector);
+        if (button) return button;
+    }
+
+    const clickableElement = container.querySelector('div[role="button"]') || 
+                            container.closest('div[role="button"]') ||
+                            container;
+    
+    return clickableElement;
+};
 log('Content script loaded');
 initialize();
