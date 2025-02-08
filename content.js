@@ -142,35 +142,6 @@ const WhatsAppNavigator = {
         return null;
     },
 
-    async clickPath(steps) {
-        for (const step of steps) {
-            const {
-                text,
-                alternativeText = [],
-                timeout = 5000,
-                waitAfterClick = 1000,
-                required = true
-            } = typeof step === 'string' ? { text: step } : step;
-
-            const searchTexts = [text, ...alternativeText];
-            let element = null;
-
-            for (const searchText of searchTexts) {
-                element = await this.findElementByContent(searchText, { timeout });
-                if (element) break;
-            }
-
-            if (!element && required) {
-                throw new Error(`Failed to find element containing: ${searchTexts.join(' or ')}`);
-            }
-
-            if (element) {
-                await this.simulateNaturalClick(element);
-                await new Promise(resolve => setTimeout(resolve, waitAfterClick));
-            }
-        }
-    },
-
     async simulateNaturalClick(element) {
         const rect = element.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
@@ -215,87 +186,9 @@ const WhatsAppNavigator = {
             element.dispatchEvent(event);
             await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 50));
         }
-    },
-
-    async navigateToMedia(type = 'photo') {
-        const navigationSteps = [
-            {
-                text: 'Menu',
-                alternativeText: ['More options', 'Additional options'],
-                waitAfterClick: 1500
-            },
-            {
-                text: 'info',
-                alternativeText: ['Contact info', 'Group info', 'Information'],
-                waitAfterClick: 1500
-            },
-            {
-                text: 'Media',
-                alternativeText: ['Media, links and docs', 'Photos and videos'],
-                waitAfterClick: 1500
-            }
-        ];
-
-        try {
-            await this.clickPath(navigationSteps);
-        } catch (error) {
-            // Fallback: Try direct media tab access
-            const mediaSelectors = [
-                '[data-testid="media-gallery"]',
-                '[data-testid="row-video"]',
-                'div[role="button"]:has(span:contains("Media"))',
-                'div[title*="Media"]'
-            ];
-
-            for (const selector of mediaSelectors) {
-                const element = document.querySelector(selector);
-                if (element) {
-                    await this.simulateNaturalClick(element);
-                    return;
-                }
-            }
-
-            throw new Error('Failed to navigate to media section');
-        }
     }
 };
 
-const findMediaElements = async () => {
-    const selectors = [
-        'div.x1xsqp64.x18d0r48',
-        'div[role="button"][data-testid="media-canvas"]',
-        'div[role="button"]:has(img[src^="blob"])',
-        'div[style*="background-image"][role="button"]'
-    ];
-
-    for (const selector of selectors) {
-        const elements = document.querySelectorAll(selector);
-        if (elements.length > 0) return Array.from(elements);
-    }
-    
-    throw new Error('No media elements found');
-};
-const extractMediaUrl = async (div) => {
-    // Try background image
-    const bgStyle = div.style.backgroundImage;
-    if (bgStyle?.includes('blob:')) {
-        return bgStyle.match(/blob:([^"]*)/)[0];
-    }
-
-    // Try image or video element
-    const mediaElement = div.querySelector('img[src^="blob"], video[src^="blob"]');
-    if (mediaElement?.src) {
-        return mediaElement.src;
-    }
-
-    // Try data attributes
-    const blobUrl = div.dataset.blobUrl || div.querySelector('[data-blob-url]')?.dataset.blobUrl;
-    if (blobUrl?.startsWith('blob:')) {
-        return blobUrl;
-    }
-
-    return null;
-};
 
 const downloadMedia = async (blob, filename) => {
     chrome.runtime.sendMessage({
@@ -336,37 +229,7 @@ const cleanup = async () => {
         console.error(`Error during cleanup: ${error.message}`);
     }
 };
-async function handleMediaDownload(selectedChats, type) {
-    if (processingAutomation) {
-        throw new Error('Automation already in progress');
-    }
-    try {
-        processingAutomation = true;
-        for (let chatTitle of selectedChats) {
-            const chat = availableChats.find(c => c.title === chatTitle);
-            if (!chat) continue;
-            await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
-            simulateClick(chat.clickableElement);
-            await waitForElement(SELECTORS.CHAT.messageContainer);
-            const mediaContent = await extractMediaContent(chatTitle, type);
-            log(`Extracted media from: ${chatTitle} - Found ${mediaContent.length} items`);
-            chrome.runtime.sendMessage({ 
-                action: "mediaProgress", 
-                progress: (selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100,
-                chat: chatTitle,
-                mediaCount: mediaContent.length
-            });
-        }
-        chrome.runtime.sendMessage({ action: "mediaDownloadComplete" });
-    } catch (error) {
-        chrome.runtime.sendMessage({
-            action: "automationError",
-            error: error.message
-        });
-    } finally {
-        processingAutomation = false;
-    }
-}
+
 async function initialize() {
     if (isInitialized) return true;
     if (initializationAttempts >= MAX_INIT_ATTEMPTS) return false;
@@ -521,35 +384,189 @@ async function extractMediaContent(chatTitle) {
     return Object.values(allMedia).flat();
 }
 
-async function automateWhatsAppExport(selectedChats, includeMedia) {
+
+async function extractChatContentAndMedia(chatTitle) {
+    const mediaContent = {
+        images: [],
+        videos: [],
+        documents: new Set(), // Using Set for document deduplication
+        links: new Set()      // Using Set for link deduplication
+    };
+    
+    // Track downloaded documents to prevent duplicates
+    const downloadedDocs = new Set();
+    let chatContent = '';
+
+    try {
+        log(`Starting complete extraction for chat: ${chatTitle}`);
+        
+        // Scroll to top first to ensure we capture everything
+        await scrollChatToTop();
+
+        // First collect all media while scrolling through the chat
+        log('Starting media collection...');
+        for (const type of Object.keys(mediaContent)) {
+            const items = await scrollAndCollectMedia(type);
+            log(`Found ${items.length} ${type}`);
+
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                
+                switch(type) {
+                    case 'images':
+                    case 'videos':
+                        const processed = await processMediaItem(item, chatTitle, i, type);
+                        if (processed) {
+                            await downloadMedia(processed.blob, processed.filename);
+                            mediaContent[type].push({ type, url: item });
+                            log(`Processed ${type} item ${i + 1} of ${items.length}`);
+                        }
+                        break;
+                        
+                    case 'documents':
+                        const downloadButton = await findDownloadButton(item);
+                        if (downloadButton) {
+                            // Extract document title/name from the button or its parent
+                            const docTitle = downloadButton.getAttribute('title') || 
+                                           downloadButton.getAttribute('aria-label') ||
+                                           downloadButton.textContent ||
+                                           'document';
+                            
+                            // Create a unique identifier for the document
+                            const docIdentifier = `${docTitle}-${downloadButton.offsetTop}-${downloadButton.offsetLeft}`;
+                            
+                            // Only download if we haven't seen this document before
+                            if (!downloadedDocs.has(docIdentifier)) {
+                                await WhatsAppNavigator.simulateNaturalClick(downloadButton);
+                                mediaContent.documents.add(docIdentifier);
+                                downloadedDocs.add(docIdentifier);
+                                log(`Processed new document: ${docTitle}`);
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                            } else {
+                                log(`Skipping duplicate document: ${docTitle}`);
+                            }
+                        }
+                        break;
+                        
+                    case 'links':
+                        mediaContent.links.add(item); // Using Set to automatically deduplicate links
+                        log(`Processed link ${i + 1} of ${items.length}`);
+                        break;
+                }
+
+                updateProgress(i + 1, items.length, chatTitle);
+            }
+        }
+
+        // Save links to a separate file
+        if (mediaContent.links.size > 0) {
+            log(`Saving ${mediaContent.links.size} unique links to file`);
+            const linksContent = Array.from(mediaContent.links).join('\n\n-------------------\n\n');
+            const linksBlob = new Blob([linksContent], { type: 'text/plain' });
+            await downloadMedia(linksBlob, `${chatTitle}-links.txt`);
+        }
+
+        // Now extract all messages
+        log('Starting message extraction...');
+        const messages = document.querySelectorAll('div.message-in, div.message-out');
+        
+        // Add chat header with metadata
+        chatContent += `\n\n`;
+        chatContent += `===========================================\n`;
+        chatContent += `Chat Export: ${chatTitle.toUpperCase()}\n`;
+        chatContent += `Date Exported: ${new Date().toLocaleDateString('en-GB')}\n`;
+        chatContent += `Total Messages: ${messages.length}\n`;
+        chatContent += `Media Summary:\n`;
+        chatContent += `- Images: ${mediaContent.images.length}\n`;
+        chatContent += `- Videos: ${mediaContent.videos.length}\n`;
+        chatContent += `- Documents: ${mediaContent.documents.length}\n`;
+        chatContent += `- Links: ${mediaContent.links.length}\n`;
+        chatContent += `===========================================\n\n`;
+
+        // Process all messages
+        messages.forEach((msg, index) => {
+            const text = msg.querySelector(SELECTORS.MESSAGE.text);
+            const timestamp = msg.querySelector(SELECTORS.MESSAGE.timestamp);
+            const isOutgoing = msg.matches('div.message-out');
+            
+            if (text) {
+                const time = timestamp ? timestamp.textContent.trim() : '';
+                const msgText = text.textContent.trim();
+                const date = new Date().toLocaleDateString('en-GB');
+                const sender = isOutgoing ? 'Me' : chatTitle;
+                
+                // Check if message contains media
+                const hasMedia = msg.querySelector(SELECTORS.MEDIA.image) || 
+                               msg.querySelector(SELECTORS.MEDIA.video) || 
+                               msg.querySelector(SELECTORS.MEDIA.document);
+                
+                chatContent += `[${date} ${time}]  ${sender}:\n`;
+                chatContent += `>>> ${msgText}\n`;
+                if (hasMedia) {
+                    chatContent += `[Contains media attachment]\n`;
+                }
+                chatContent += `-------------------------------------------\n\n`;
+                
+                if (index % 100 === 0) {
+                    log(`Processed ${index} messages...`);
+                }
+            }
+        });
+
+        // Save chat content
+        log('Saving chat content...');
+        const chatBlob = new Blob([chatContent], { type: 'text/plain' });
+        await downloadMedia(chatBlob, `${chatTitle}.txt`);
+
+        return {
+            success: true,
+            chatFilename: `${chatTitle}.txt`,
+            mediaContent: {
+                images: mediaContent.images.length,
+                videos: mediaContent.videos.length,
+                documents: mediaContent.documents.length,
+                links: mediaContent.links.length
+            },
+            totalMessages: messages.length
+        };
+
+    } catch (error) {
+        log(`Error in extractChatContentAndMedia: ${error.message}`);
+        throw error;
+    }
+}
+
+// Update the automateWhatsAppExport function to always extract everything
+async function automateWhatsAppExport(selectedChats) {
     try {
         for (let chatTitle of selectedChats) {
             const chat = availableChats.find(c => c.title === chatTitle);
-            if (!chat) continue;
+            if (!chat) {
+                log(`Chat not found: ${chatTitle}`);
+                continue;
+            }
 
+            log(`Processing chat: ${chatTitle}`);
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(chat.clickableElement);
             await waitForElement(SELECTORS.CHAT.messageContainer);
-
-            if (includeMedia) {
-                const mediaContent = await extractMediaContent(chatTitle);
-                log(`Extracted media from: ${chatTitle} - Found ${mediaContent.length} items`);
-            } else {
-                const filename = await extractAndDownloadChat(chatTitle);
-                log(`Downloaded chat: ${filename}`);
-            }
+            
+            const result = await extractChatContentAndMedia(chatTitle);
 
             chrome.runtime.sendMessage({ 
-                action: includeMedia ? "mediaProgress" : "chatProgress",
+                action: "exportProgress",
                 progress: Math.round((selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100),
                 chat: chatTitle,
-                mediaCount: includeMedia ? mediaContent?.length : 0
+                stats: {
+                    messages: result.totalMessages,
+                    media: result.mediaContent
+                }
             });
         }
 
         chrome.runtime.sendMessage({ 
-            action: includeMedia ? "mediaDownloadComplete" : "exportComplete",
-            message: `Successfully processed ${selectedChats.length} chats`
+            action: "exportComplete",
+            message: `Successfully processed ${selectedChats.length} chats with all content`
         });
     } catch (error) {
         chrome.runtime.sendMessage({
@@ -773,103 +790,9 @@ const extractAndDownloadChat = async (chatTitle) => {
     return filename;
 };
 
-const findAndClickTab = async (type) => {
-    const tabSearchPatterns = {
-        'document': {
-            selectors: [
-                'button[title="Docs"][role="tab"]',
-                'button[aria-label*="Document"]',
-                '[data-testid="document-tab"]',
-                '[data-tab="documents"]'
-            ],
-            textPatterns: ['Docs', 'Documents', 'Files', 'DOC']
-        },
-        'link': {
-            selectors: [
-                'button[title="Links"][role="tab"]',
-                'button[aria-label*="Link"]',
-                '[data-testid="link-tab"]',
-                '[data-tab="links"]'
-            ],
-            textPatterns: ['Links', 'URLs', 'Web Links']
-        }
-    };
-
-    const patterns = tabSearchPatterns[type];
-    if (!patterns) return false;
-
-    // Try direct selectors first
-    for (const selector of patterns.selectors) {
-        const element = document.querySelector(selector);
-        if (element) {
-            await WhatsAppNavigator.simulateNaturalClick(element);
-            return true;
-        }
-    }
-
-    // Try finding by text content
-    for (const text of patterns.textPatterns) {
-        const buttons = Array.from(document.querySelectorAll('button, [role="tab"]'));
-        const button = buttons.find(b => b.textContent?.includes(text));
-        if (button) {
-            await WhatsAppNavigator.simulateNaturalClick(button);
-            return true;
-        }
-    }
-
-    // Deep DOM search
-    const deepSearchResult = await WhatsAppNavigator.findElementByContent(patterns.textPatterns[0], {
-        role: 'tab',
-        maxDepth: 6,
-        timeout: 3000,
-        partial: true
-    });
-
-    if (deepSearchResult) {
-        await WhatsAppNavigator.simulateNaturalClick(deepSearchResult);
-        return true;
-    }
-
-    // Last resort: find any clickable element containing the text
-    const allElements = document.querySelectorAll('[role="button"], button, [class*="tab"]');
-    for (const text of patterns.textPatterns) {
-        for (const element of allElements) {
-            if (element.textContent?.toLowerCase().includes(text.toLowerCase())) {
-                await WhatsAppNavigator.simulateNaturalClick(element);
-                return true;
-            }
-        }
-    }
-
-    return false;
-};
-
 SELECTORS.MEDIA_ELEMENTS.documents = `[role="button"][title*="Download"], .x78zum5[title*="Download"], .icon-doc-pdf, [data-testid="document-thumb"]`;
 
-async function processDocuments(container) {
-    const downloadButton = container.closest('[role="button"][title*="Download"]') || container;
-    
-    if (downloadButton) {
-        const events = ['mouseover', 'mousedown', 'mouseup', 'click'];
-        const rect = downloadButton.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
 
-        for (const eventType of events) {
-            downloadButton.dispatchEvent(new MouseEvent(eventType, {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                clientX: centerX,
-                clientY: centerY
-            }));
-            await new Promise(resolve => setTimeout(resolve, 200));
-        }
-        await new Promise(resolve => setTimeout(resolve, 2500));
-        return true;
-    }
-    return false;
-}
 
 async function scrollAndCollectMedia(type) {
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
@@ -919,69 +842,6 @@ async function scrollAndCollectMedia(type) {
     return Array.from(mediaItems);
 }
 
-const processLinks = async (chatTitle, mediaItems) => {
-    try {
-        if (!await findAndClickTab('link')) {
-            throw new Error('Could not find links tab');
-        }
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        const links = new Set();
-        const linkSelectors = [
-            'a[href^="http"]',
-            '[data-testid="link"]',
-            'div[role="link"]',
-            '[class*="link-preview"]'
-        ];
-
-        for (const selector of linkSelectors) {
-            const elements = document.querySelectorAll(selector);
-            elements.forEach(element => {
-                const url = element.href || element.getAttribute('data-url') || element.getAttribute('href');
-                if (url?.startsWith('http')) {
-                    links.add(url);
-                }
-            });
-        }
-
-        if (links.size > 0) {
-            const content = Array.from(links)
-                .map(url => `${url}\n\n-------------------`)
-                .join('\n\n');
-            const blob = new Blob([content], { type: 'text/plain' });
-            await downloadMedia(blob, `${chatTitle}-links.txt`);
-            mediaItems.push({ type: 'links', count: links.size });
-            updateProgress(1, 1, chatTitle);
-        }
-    } catch (error) {
-        log(`Error in processLinks: ${error.message}`);
-    }
-};
-
-const findDocumentContainers = async () => {
-    const containerSelectors = [
-        'div[data-testid="document-thumb"]',
-        'div[role="gridcell"]',
-        'div[data-icon="document"]',
-        'div[class*="document"]',
-        'div[class*="x9f619"][class*="x1u9i22x"]',
-        'div[class*="x78zum5"]'
-    ];
-
-    for (const selector of containerSelectors) {
-        const containers = document.querySelectorAll(selector);
-        if (containers.length > 0) return Array.from(containers);
-    }
-
-    // Fallback: find by content patterns
-    const documentPatterns = ['PDF', '.pdf', '.doc', '.docx', '.txt'];
-    const allElements = document.querySelectorAll('div[role="gridcell"], div[role="row"]');
-    return Array.from(allElements).filter(el => 
-        documentPatterns.some(pattern => 
-            el.textContent?.toLowerCase().includes(pattern.toLowerCase())
-        )
-    );
-};
 
 const findDownloadButton = async (container) => {
     const downloadSelectors = [
