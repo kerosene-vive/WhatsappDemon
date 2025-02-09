@@ -382,3 +382,39 @@ select {
   top: 20px;
   cursor: pointer;
 }
+.play-button {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #FF0000;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 20px auto;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  transition: transform 0.2s;
+}
+
+.play-button:hover {
+  transform: scale(1.05);
+}
+
+.play-button svg {
+  width: 30px;
+  height: 30px;
+  fill: white;
+}
+
+.task-groups {
+  display: block !important;
+}
+
+#text-export {
+  display: block;
+}
+
+.other-exports {
+  display: none;
+}

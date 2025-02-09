@@ -22,106 +22,23 @@
                <div id="chatList" class="chat-list"></div>
            </div>
            
-           <select id="taskType" style="width: 100%; margin: 10px 0;">
-               <option value="">Select Task</option>
-               <option value="text">Download Messages</option>
-               <option value="photo">Download Photos</option>
-               <option value="document">Download Documents</option>
-               <option value="link">Download Links</option>
-           </select>
-        <div class="task-groups" style="display: none;">
-            <div class="task-group" id="text-export">
-                <div class="loading-fill"></div>
-                <div class="task-content">
-                    <div class="task-name">
-                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                            <path d="M7 8h10M7 12h10M7 16h10"></path>
-                        </svg>
-                        Download Messages
-                    </div>
-                    <div class="button-group">
-                        <button class="chat-button" data-type="text">
-                            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                            </svg>
-                            Download Selected
-                        </button>
-                    </div>
-                    <div class="completion-message">Download Complete! ✓</div>
-                </div>
-            </div>
+           <button class="play-button" id="mainDownload">
+               <svg viewBox="0 0 24 24">
+                   <path d="M8 5v14l11-7z"/>
+               </svg>
+           </button>
 
-            <div class="task-group" id="photo-export">
-                <div class="loading-fill"></div>
-                <div class="task-content">
-                    <div class="task-name">
-                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                            <path d="m21 15-5-5L5 21"></path>
-                        </svg>
-                        Download Photos
-                    </div>
-                    <div class="button-group">
-                        <button class="chat-button" data-type="media" data-media-type="photo">
-                            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                            </svg>
-                            Download Selected
-                        </button>
-                    </div>
-                    <div class="completion-message">Download Complete! ✓</div>
-                </div>
-            </div>
-
-            <div class="task-group" id="document-export">
-                <div class="loading-fill"></div>
-                <div class="task-content">
-                    <div class="task-name">
-                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none">
-                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                        </svg>
-                        Download Documents
-                    </div>
-                    <div class="button-group">
-                        <button class="chat-button" data-type="media" data-media-type="document">
-                            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                            </svg>
-                            Download Selected
-                        </button>
-                    </div>
-                    <div class="completion-message">Download Complete! ✓</div>
-                </div>
-            </div>
-
-            <div class="task-group" id="link-export">
-                <div class="loading-fill"></div>
-                <div class="task-content">
-                    <div class="task-name">
-                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none">
-                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-                        </svg>
-                        Download Links
-                    </div>
-                    <div class="button-group">
-                        <button class="chat-button" data-type="media" data-media-type="link">
-                            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
-                            </svg>
-                            Download Selected
-                        </button>
-                    </div>
-                    <div class="completion-message">Download Complete! ✓</div>
-                </div>
-            </div>
-        </div>
-        <button id="mainDownload"></button>
-    </div>
-</div>
-<script src="popup.js"></script>
+           <div class="task-groups">
+               <div class="task-group" id="text-export">
+                   <div class="loading-fill"></div>
+                   <div class="task-content">
+                       <div class="status-text"></div>
+                       <div class="completion-message">Download Complete! ✓</div>
+                   </div>
+               </div>
+           </div>
+       </div>
+   </div>
+   <script src="popup.js"></script>
 </body>
 </html>
