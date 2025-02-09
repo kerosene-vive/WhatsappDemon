@@ -166,24 +166,6 @@ async function handleWhatsApp() {
 }
 
 
-async function handleDownload(request) {
-    if (!request.data) return;
-    const downloadKey = `${request.data.filename}-${request.data.url}`;
-    if (processedDownloads.has(downloadKey)) return;
-    processedDownloads.add(downloadKey);
-    try {
-        await chrome.downloads.download({
-            url: request.data.url,
-            filename: request.data.filename,
-            saveAs: false
-        });
-    } catch (error) {
-        log(`Download error: ${error.message}`);
-        throw error;
-    }
-}
-
-
 async function forwardMessage(request, sender) {
     if (!sender.tab || sender.tab.id !== whatsappTabId) return;
     
@@ -196,6 +178,34 @@ async function forwardMessage(request, sender) {
     }
 }
 
+// Aggiungi questa variabile per la coda dei download
+let downloadQueue = Promise.resolve();
+
+async function handleDownload(request) {
+    if (!request.data) return;
+    const downloadKey = `${request.data.filename}-${request.data.url}`;
+    if (processedDownloads.has(downloadKey)) return;
+    processedDownloads.add(downloadKey);
+    
+    try {
+        await chrome.downloads.download({
+            url: request.data.url,
+            filename: request.data.filename,
+            saveAs: false
+        });
+    } catch (error) {
+        log(`Download error: ${error.message}`);
+        throw error;
+    }
+}
+
+function queueDownload(request) {
+    downloadQueue = downloadQueue.then(() => handleDownload(request))
+        .catch(error => log(`Download queue error: ${error.message}`));
+    return downloadQueue;
+}
+
+// Il listener completo modificato
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     log(`Received message: ${request.action}`);
     switch (request.action) {
@@ -207,6 +217,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     message: error.message 
                 }));
             return true;
+
         case "startAutomation":
             if (whatsappTabId) {
                 chrome.tabs.sendMessage(whatsappTabId, request)
@@ -222,9 +233,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 });
             }
             return true;
+
         case "chatsAvailable":
             chrome.runtime.sendMessage(request).catch(() => {});
             break;
+
         case "contentScriptReady":
             if (sender.tab) {
                 tabStates.set(sender.tab.id, STATES.READY);
@@ -233,23 +246,46 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 sendResponse({ status: 'acknowledged' });
             }
             break;
+
         case "downloadChat":
         case "downloadMedia":
-            handleDownload(request)
+            if (!request.data) {
+                sendResponse({ status: 'error', message: 'No download data provided' });
+                return true;
+            }
+            queueDownload(request)
                 .then(() => sendResponse({ status: 'download started' }))
                 .catch(error => sendResponse({ 
                     status: 'error', 
                     message: error.message 
                 }));
             return true;
+
         case "automationComplete":
             restoreOriginalTab()
-                .then(() => sendResponse({ status: 'complete' }))
+                .then(() => {
+                    // Reset download queue after completion
+                    downloadQueue = Promise.resolve();
+                    processedDownloads.clear();
+                    sendResponse({ status: 'complete' });
+                })
                 .catch(error => sendResponse({ 
                     status: 'error', 
                     message: error.message 
                 }));
             return true;
+
+        case "mediaProgress":
+        case "exportProgress":
+        case "exportComplete":
+        case "automationError":
+        case "debugLog":
+        case "whatsappLoginRequired":
+            if (!sender.tab || sender.tab.id === whatsappTabId) {
+                chrome.runtime.sendMessage(request).catch(() => {});
+            }
+            break;
+
         default:
             if (!sender.tab || sender.tab.id === whatsappTabId) {
                 chrome.runtime.sendMessage(request).catch(() => {});
