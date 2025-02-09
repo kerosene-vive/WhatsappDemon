@@ -29,18 +29,19 @@ const SELECTORS = {
         links: 'a[href^="http"], [data-testid="link"], div[role="link"]'
     }
 };
+
 const TIMEOUTS = {
-    LOAD: 1000,           // Ridotto da 2000
-    CHAT_SELECT: 100,     // Ridotto da 300
-    MESSAGE_LOAD: 100,    // Ridotto da 300
-    MEDIA_LOAD: 100,      // Ridotto da 300
-    INIT_RETRY: 50,       // Mantenuto
-    DOWNLOAD_WAIT: 50,    // Mantenuto
-    SCROLL_INTERVAL: 100, // Mantenuto per scroll naturale
-    SCROLL_ATTEMPTS: 100  // Mantenuto
+    LOAD: 1000,
+    CHAT_SELECT: 100,
+    MESSAGE_LOAD: 100,
+    MEDIA_LOAD: 100,
+    INIT_RETRY: 50,
+    DOWNLOAD_WAIT: 50,
+    SCROLL_INTERVAL: 100,
+    SCROLL_ATTEMPTS: 100
 };
 
-// Message handlers
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     switch(request.action) {
         case "ping":
@@ -70,39 +71,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
 });
 
-// Core functions
+
 async function initialize() {
     if (isInitialized || initializationAttempts >= MAX_INIT_ATTEMPTS) return isInitialized;
     initializationAttempts++;
-    
     try {
         const qrCode = document.querySelector('div[data-ref]');
         const chatList = document.querySelector('#pane-side');
-        
         if (qrCode && !chatList) {
             chrome.runtime.sendMessage({ action: 'whatsappLoginRequired' });
             setTimeout(() => { initializationAttempts--; initialize(); }, 1000);
             return false;
         }
-
         if (!await waitForElement('#pane-side', 10000)) {
             setTimeout(initialize, TIMEOUTS.INIT_RETRY);
             return false;
         }
-
         await new Promise(resolve => setTimeout(resolve, 1000));
         availableChats = await getChatsList();
-        
         if (availableChats.length === 0) {
             setTimeout(initialize, TIMEOUTS.INIT_RETRY);
             return false;
         }
-
         chrome.runtime.sendMessage({ 
             action: 'chatsAvailable', 
             chats: availableChats.map(chat => chat.title)
         });
-
         isInitialized = true;
         return true;
     } catch (error) {
@@ -114,16 +108,15 @@ async function initialize() {
     }
 }
 
+
 async function automateWhatsAppExport(selectedChats) {
     try {
         for (let chatTitle of selectedChats) {
             const chat = availableChats.find(c => c.title === chatTitle);
             if (!chat) continue;
-
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(chat.clickableElement);
             await waitForElement(SELECTORS.CHAT.messageContainer);
-            
             const result = await extractChatContentAndMedia(chatTitle);
             chrome.runtime.sendMessage({ 
                 action: "exportProgress",
@@ -135,7 +128,6 @@ async function automateWhatsAppExport(selectedChats) {
                 }
             });
         }
-
         chrome.runtime.sendMessage({ 
             action: "exportComplete",
             message: `Successfully processed ${selectedChats.length} chats`
@@ -148,6 +140,7 @@ async function automateWhatsAppExport(selectedChats) {
     }
 }
 
+
 async function collectMessages(chatTitle) {
     const messages = document.querySelectorAll('div.message-in, div.message-out');
     let content = [
@@ -157,7 +150,6 @@ async function collectMessages(chatTitle) {
         `Messages: ${messages.length}`,
         '===========================================\n\n'
     ].join('\n');
-
     messages.forEach(msg => {
         const text = msg.querySelector(SELECTORS.MESSAGE.text);
         const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim() || '';
@@ -170,30 +162,24 @@ async function collectMessages(chatTitle) {
             ].join('\n');
         }
     });
-
     return { content, count: messages.length };
 }
+
+
 async function extractChatContentAndMedia(chatTitle) {
     try {
         await scrollChatToTop();
-        
-        // Avvia raccolta messaggi e media in parallelo
         const [mediaContent, messages] = await Promise.all([
             collectAllMedia(chatTitle),
             collectMessages(chatTitle)
         ]);
-
-        // Salva i messaggi
         const messagesBlob = new Blob([messages.content], { type: 'text/plain' });
         await downloadMedia(messagesBlob, `${chatTitle}/${chatTitle}.txt`);
-
-        // Salva i link se presenti
         if (mediaContent.links.size > 0) {
             const linksContent = Array.from(mediaContent.links).join('\n\n---\n\n');
             const linksBlob = new Blob([linksContent], { type: 'text/plain' });
             await downloadMedia(linksBlob, `${chatTitle}/${chatTitle}-links.txt`);
         }
-
         return {
             success: true,
             mediaContent: {
@@ -209,15 +195,13 @@ async function extractChatContentAndMedia(chatTitle) {
     }
 }
 
-// Helper functions
+
 async function scrollAndCollectMedia(type) {
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
     if (!container) throw new Error('No scroll container');
-
     const mediaItems = new Set();
     let lastHeight = 0;
     let unchangedCount = 0;
-
     const collectCurrentView = () => {
         const selector = SELECTORS.MEDIA_ELEMENTS[type];
         document.querySelectorAll(selector).forEach(el => {
@@ -234,12 +218,10 @@ async function scrollAndCollectMedia(type) {
             }
         });
     };
-
     for (let i = 0; i < 30 && unchangedCount < 3; i++) {
         collectCurrentView();
         container.scrollTop += 1000;
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
         if (container.scrollHeight === lastHeight) unchangedCount++;
         else {
             unchangedCount = 0;
@@ -250,10 +232,10 @@ async function scrollAndCollectMedia(type) {
     return Array.from(mediaItems);
 }
 
+
 async function scrollChatToTop() {
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
     if (!container) return;
-
     let lastCount = 0;
     let unchanged = 0;
     for (let i = 0; i < 30 && unchanged < 3; i++) {
@@ -261,7 +243,6 @@ async function scrollChatToTop() {
         messages[0]?.scrollIntoView({ behavior: "auto", block: "center" });
         container.scrollTop -= 10000;
         await new Promise(resolve => setTimeout(resolve, 400));
-        
         const currentCount = messages.length;
         if (currentCount === lastCount) unchanged++;
         else {
@@ -271,6 +252,7 @@ async function scrollChatToTop() {
     }
     await new Promise(resolve => setTimeout(resolve, 1000));
 }
+
 
 function processMessages(messages, chatTitle, mediaContent) {
     let content = [
@@ -285,7 +267,6 @@ function processMessages(messages, chatTitle, mediaContent) {
         `- Links: ${mediaContent.links.size}`,
         '===========================================\n\n'
     ].join('\n');
-
     messages.forEach(msg => {
         const text = msg.querySelector(SELECTORS.MESSAGE.text);
         const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim() || '';
@@ -298,15 +279,15 @@ function processMessages(messages, chatTitle, mediaContent) {
             ].join('\n');
         }
     });
-
     return content;
 }
 
-// Utility functions
+
 const log = msg => {
     console.log(`[WhatsApp Export] ${msg}`);
     chrome.runtime.sendMessage({ action: "debugLog", message: msg }).catch(() => {});
 };
+
 
 const downloadMedia = async (blob, filename) => {
     chrome.runtime.sendMessage({
@@ -314,6 +295,7 @@ const downloadMedia = async (blob, filename) => {
         data: { url: URL.createObjectURL(blob), filename, type: blob.type }
     });
 };
+
 
 const updateProgress = (current, total, chatTitle) => {
     chrome.runtime.sendMessage({
@@ -323,6 +305,7 @@ const updateProgress = (current, total, chatTitle) => {
         mediaCount: current
     });
 };
+
 
 const simulateClick = element => {
     const rect = element.getBoundingClientRect();
@@ -337,31 +320,30 @@ const simulateClick = element => {
     );
 };
 
-const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => 
-    new Promise((resolve, reject) => {
-        const element = document.querySelector(selector);
-        if (element) return resolve(element);
-        
-        const observer = new MutationObserver((_, obs) => {
-            const element = document.querySelector(selector);
-            if (element) {
-                obs.disconnect();
-                resolve(element);
-            }
-        });
-        
-        observer.observe(document.body, {
-            childList: true, subtree: true,
-            attributes: true, characterData: true
-        });
-        
-        setTimeout(() => {
-            observer.disconnect();
-            reject(new Error(`Timeout: ${selector}`));
-        }, timeout);
-    });
 
-    async function processMediaItem(url, chatTitle, index, type) {
+const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => 
+        new Promise((resolve, reject) => {
+            const element = document.querySelector(selector);
+            if (element) return resolve(element);
+            const observer = new MutationObserver((_, obs) => {
+                const element = document.querySelector(selector);
+                if (element) {
+                    obs.disconnect();
+                    resolve(element);
+                }
+            });
+            observer.observe(document.body, {
+                childList: true, subtree: true,
+                attributes: true, characterData: true
+            });
+            setTimeout(() => {
+                observer.disconnect();
+                reject(new Error(`Timeout: ${selector}`));
+            }, timeout);
+});
+
+
+async function processMediaItem(url, chatTitle, index, type) {
         try {
             const response = await fetch(url);
             const blob = await response.blob();
@@ -373,7 +355,8 @@ const waitForElement = (selector, timeout = TIMEOUTS.LOAD) =>
             log(`Media processing error: ${error.message}`);
             return null;
         }
-    }
+}
+
 
 const getChatsList = async () => {
     const container = await waitForElement(SELECTORS.CHAT_LIST.container);
@@ -397,6 +380,7 @@ const getChatsList = async () => {
         .filter(chat => chat !== null);
 };
 
+
 const findDownloadButton = async (container) => {
     const downloadSelectors = [
         'span[data-icon="download"]',
@@ -405,25 +389,23 @@ const findDownloadButton = async (container) => {
         'div[title*="Download"]',
         '[data-testid="download"]'
     ];
-
     for (const selector of downloadSelectors) {
         const button = container.querySelector(selector) || document.querySelector(selector);
         if (button) return button;
     }
-
     return container.querySelector('div[role="button"]') || 
            container.closest('div[role="button"]') ||
            container;
 };
+
+
 async function collectAllMedia(chatTitle) {
     const mediaContent = {
         images: [], videos: [],
         documents: new Set(), links: new Set()
     };
-
     await Promise.all(Object.keys(mediaContent).map(async type => {
         const items = await scrollAndCollectMedia(type);
-        
         await Promise.all(items.map(async (item, index) => {
             try {
                 switch(type) {
@@ -436,7 +418,6 @@ async function collectAllMedia(chatTitle) {
                         await downloadMedia(blob, filename);
                         mediaContent[type].push(item);
                         break;
-                        
                     case 'documents':
                         const button = await findDownloadButton(item);
                         if (button) {
@@ -447,8 +428,7 @@ async function collectAllMedia(chatTitle) {
                                 await new Promise(resolve => setTimeout(resolve, 100));
                             }
                         }
-                        break;
-                        
+                        break;  
                     case 'links':
                         mediaContent.links.add(item);
                         break;
@@ -459,10 +439,8 @@ async function collectAllMedia(chatTitle) {
             }
         }));
     }));
-
     return mediaContent;
 }
 
-// Start initialization
 log('Content script loaded');
 initialize();
