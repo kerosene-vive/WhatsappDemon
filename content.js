@@ -4,7 +4,171 @@ const MAX_INIT_ATTEMPTS = 5;
 let debugSkipQRCheck = true;
 let availableChats = [];
 let processingAutomation = false;
+const processedFiles = new Set();
+let resizeTimer;
+const VIEWPORT = {
+    checkInterval: 1000,
+    resizeDebounce: 250,
+    minWidth: 300
+};
+const monitorViewport = () => {
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(handleResize, VIEWPORT.resizeDebounce);
+    });
+    
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            reinitializeIfNeeded();
+        }
+    });
+};
+const handleResize = async () => {
+    const viewport = document.querySelector(SELECTORS.CHAT.viewport);
+    if (!viewport || viewport.offsetWidth < VIEWPORT.minWidth) {
+        await reinitializeIfNeeded();
+    }
+};
+const reinitializeIfNeeded = async () => {
+    if (!isInitialized || processingAutomation) {
+        isInitialized = false;
+        initializationAttempts = 0;
+        await initialize();
+    }
+};
+const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => 
+    new Promise((resolve, reject) => {
+        const checkElement = () => {
+            const element = document.querySelector(selector);
+            if (element && isElementVisible(element)) {
+                return resolve(element);
+            }
+            
+            const observer = new MutationObserver((mutations, obs) => {
+                const element = document.querySelector(selector);
+                if (element && isElementVisible(element)) {
+                    obs.disconnect();
+                    resolve(element);
+                }
+            });
+            
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true
+            });
+            
+            setTimeout(() => {
+                observer.disconnect();
+                reject(new Error(`Timeout: ${selector}`));
+            }, timeout);
+        };
+        
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkElement);
+        } else {
+            checkElement();
+        }
+    });
+const isElementVisible = (element) => {
+    const rect = element.getBoundingClientRect();
+    return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.top < window.innerHeight &&
+        rect.left < window.innerWidth
+    );
+};
 
+
+async function maximizeWindow() {
+    const viewport = document.querySelector(SELECTORS.CHAT.viewport);
+    if (!viewport) return false;
+    
+    const originalStyles = {
+        width: viewport.style.width,
+        height: viewport.style.height,
+        position: viewport.style.position
+    };
+    
+    viewport.style.position = 'fixed';
+    viewport.style.width = '100vw';
+    viewport.style.height = '100vh';
+    
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return originalStyles;
+}
+
+async function restoreWindow(viewport, originalStyles) {
+    if (!viewport || !originalStyles) return;
+    Object.assign(viewport.style, originalStyles);
+}
+async function initialize() {
+    if (isInitialized || initializationAttempts >= MAX_INIT_ATTEMPTS) return isInitialized;
+    
+    initializationAttempts++;
+    try {
+        // Maximize chat container
+        const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
+        if (container) {
+            container.style.height = '100vh';
+            container.style.maxHeight = 'none';
+            container.style.overflow = 'auto';
+        }
+
+        const viewport = document.querySelector(SELECTORS.CHAT.viewport);
+        if (viewport) {
+            viewport.style.width = '100vw';
+            viewport.style.height = '100vh';
+            viewport.style.maxHeight = 'none';
+            viewport.style.position = 'fixed';
+            viewport.style.top = '0';
+            viewport.style.left = '0';
+        }
+        
+        const isVisible = !document.hidden;
+        if (!isVisible) {
+            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
+            return false;
+        }
+        
+        const qrCode = document.querySelector('div[data-ref]');
+        const chatList = document.querySelector('#pane-side');
+        
+        if (qrCode && !chatList) {
+            chrome.runtime.sendMessage({ action: 'whatsappLoginRequired' });
+            setTimeout(() => { initializationAttempts--; initialize(); }, 1000);
+            return false;
+        }
+        
+        if (!await waitForElement('#pane-side', 10000)) {
+            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
+            return false;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        availableChats = await getChatsList();
+        
+        if (availableChats.length === 0) {
+            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
+            return false;
+        }
+        
+        chrome.runtime.sendMessage({ 
+            action: 'chatsAvailable', 
+            chats: availableChats.map(chat => chat.title)
+        });
+        
+        isInitialized = true;
+        return true;
+    } catch (error) {
+        log(`Init error: ${error.message}`);
+        if (initializationAttempts < MAX_INIT_ATTEMPTS) {
+            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
+        }
+        return false;
+    }
+}
 const SELECTORS = {
     CHAT_LIST: { container: '#pane-side', messages: '[role="row"]', mainPanel: '#main' },
     MESSAGE: {
@@ -20,7 +184,9 @@ const SELECTORS = {
         clickableArea: '._ak8q',
         title: 'span[dir="auto"]',
         item: 'div._ak8l',
-        scrollContainer: 'div[tabindex="0"][role="application"]'
+        scrollContainer: 'div[tabindex="0"][role="application"]',
+        viewport: '#app, .app-wrapper-web',
+        visibilityCheck: '[data-testid="chat"]'
     },
     MEDIA_ELEMENTS: {
         images: 'img[src^="blob:"], div[style*="background-image"][role="button"]',
@@ -141,29 +307,6 @@ async function automateWhatsAppExport(selectedChats) {
 }
 
 
-async function collectMessages(chatTitle) {
-    const messages = document.querySelectorAll('div.message-in, div.message-out');
-    let content = [
-        '\n===========================================',
-        `Chat Export: ${chatTitle.toUpperCase()}`,
-        `Date: ${new Date().toLocaleDateString('en-GB')}`,
-        `Messages: ${messages.length}`,
-        '===========================================\n\n'
-    ].join('\n');
-    messages.forEach(msg => {
-        const text = msg.querySelector(SELECTORS.MESSAGE.text);
-        const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim() || '';
-        if (text) {
-            content += [
-                `[${new Date().toLocaleDateString('en-GB')} ${time}] ${msg.matches('div.message-out') ? 'Me' : chatTitle}:`,
-                `>>> ${text.textContent.trim()}`,
-                msg.querySelector('img[src^="blob:"], video[src^="blob:"], [data-icon="document"]') ? '[Contains media]\n' : '',
-                '-------------------------------------------\n\n'
-            ].join('\n');
-        }
-    });
-    return { content, count: messages.length };
-}
 
 
 async function extractChatContentAndMedia(chatTitle) {
@@ -195,42 +338,6 @@ async function extractChatContentAndMedia(chatTitle) {
     }
 }
 
-
-async function scrollAndCollectMedia(type) {
-    const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
-    if (!container) throw new Error('No scroll container');
-    const mediaItems = new Set();
-    let lastHeight = 0;
-    let unchangedCount = 0;
-    const collectCurrentView = () => {
-        const selector = SELECTORS.MEDIA_ELEMENTS[type];
-        document.querySelectorAll(selector).forEach(el => {
-            if (type === 'documents') {
-                const button = el.closest('[role="button"][title*="Download"]') || el;
-                if (button) mediaItems.add(button);
-            } else {
-                const url = el.src || el.href || 
-                           el.style.backgroundImage?.match(/url\("(.+)"\)/)?.[1] ||
-                           el.getAttribute('data-url');
-                if (url?.startsWith(type === 'links' ? 'http' : 'blob:')) {
-                    mediaItems.add(url);
-                }
-            }
-        });
-    };
-    for (let i = 0; i < 30 && unchangedCount < 3; i++) {
-        collectCurrentView();
-        container.scrollTop += 1000;
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        if (container.scrollHeight === lastHeight) unchangedCount++;
-        else {
-            unchangedCount = 0;
-            lastHeight = container.scrollHeight;
-        }
-    }
-
-    return Array.from(mediaItems);
-}
 
 
 async function scrollChatToTop() {
@@ -321,26 +428,6 @@ const simulateClick = element => {
 };
 
 
-const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => 
-        new Promise((resolve, reject) => {
-            const element = document.querySelector(selector);
-            if (element) return resolve(element);
-            const observer = new MutationObserver((_, obs) => {
-                const element = document.querySelector(selector);
-                if (element) {
-                    obs.disconnect();
-                    resolve(element);
-                }
-            });
-            observer.observe(document.body, {
-                childList: true, subtree: true,
-                attributes: true, characterData: true
-            });
-            setTimeout(() => {
-                observer.disconnect();
-                reject(new Error(`Timeout: ${selector}`));
-            }, timeout);
-});
 
 
 async function processMediaItem(url, chatTitle, index, type) {
@@ -398,49 +485,175 @@ const findDownloadButton = async (container) => {
            container;
 };
 
+async function scrollAndCollectMedia(type) {
+    const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
+    if (!container) throw new Error('No scroll container');
+    
+    const mediaItems = new Map();
+    let lastHeight = container.scrollHeight;
+    let unchangedCount = 0;
+    
+    const collectCurrentView = () => {
+        const selector = SELECTORS.MEDIA_ELEMENTS[type];
+        document.querySelectorAll(selector).forEach(el => {
+            if (type === 'documents') {
+                const button = el.closest('[role="button"][title*="Download"]') || el;
+                if (button) {
+                    const title = button.getAttribute('title') || '';
+                    const uniqueId = title.replace(/\s*\(\d+\)\s*/, '').trim();
+                    if (!mediaItems.has(uniqueId)) {
+                        mediaItems.set(uniqueId, button);
+                    }
+                }
+            } else if (type === 'links') {
+                const url = el.href || el.getAttribute('data-url');
+                if (url?.startsWith('http')) mediaItems.set(url, url);
+            } else {
+                const url = el.src || el.style.backgroundImage?.match(/url\("(.+)"\)/)?.[1];
+                if (url?.startsWith('blob:')) mediaItems.set(url, url);
+            }
+        });
+    };
+
+    container.scrollTop = 0;
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    for (let i = 0; i < 50 && unchangedCount < 5; i++) {
+        collectCurrentView();
+        container.scrollTop += 500;
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        const currentHeight = container.scrollHeight;
+        if (Math.abs(currentHeight - lastHeight) < 10) {
+            unchangedCount++;
+        } else {
+            unchangedCount = 0;
+            lastHeight = currentHeight;
+        }
+    }
+
+    return Array.from(type === 'documents' ? mediaItems.values() : mediaItems.keys());
+}
 
 async function collectAllMedia(chatTitle) {
     const mediaContent = {
         images: [], videos: [],
-        documents: new Set(), links: new Set()
+        documents: new Set(),
+        links: new Set()
     };
-    await Promise.all(Object.keys(mediaContent).map(async type => {
-        const items = await scrollAndCollectMedia(type);
-        await Promise.all(items.map(async (item, index) => {
-            try {
-                switch(type) {
-                    case 'images':
-                    case 'videos':
-                        const response = await fetch(item);
-                        const blob = await response.blob();
-                        const ext = type === 'images' ? '.jpg' : '.mp4';
-                        const filename = `${chatTitle}/${type}/${index + 1}${ext}`;
-                        await downloadMedia(blob, filename);
-                        mediaContent[type].push(item);
-                        break;
-                    case 'documents':
-                        const button = await findDownloadButton(item);
-                        if (button) {
-                            const docId = `${button.getAttribute('title') || 'doc'}-${index}`;
-                            if (!mediaContent.documents.has(docId)) {
-                                await simulateClick(button);
-                                mediaContent.documents.add(docId);
-                                await new Promise(resolve => setTimeout(resolve, 100));
-                            }
-                        }
-                        break;  
-                    case 'links':
-                        mediaContent.links.add(item);
-                        break;
+    
+    await scrollChatToTop();
+    
+    for (const type of Object.keys(mediaContent)) {
+        try {
+            const items = await scrollAndCollectMedia(type);
+            for (let [index, item] of items.entries()) {
+                try {
+                    switch(type) {
+                        case 'images':
+                        case 'videos':
+                            const ext = type === 'images' ? '.jpg' : '.mp4';
+                            const filename = `${chatTitle}/${type}/${index + 1}${ext}`;
+                            const response = await fetch(item);
+                            const blob = await response.blob();
+                            await downloadMedia(blob, filename);
+                            mediaContent[type].push(item);
+                            break;
+                            
+                        case 'documents':
+                            const docResult = await processDocument(item, chatTitle, index);
+                            if (docResult) mediaContent.documents.add(docResult);
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                            break;
+                            
+                        case 'links':
+                            mediaContent.links.add(item);
+                            break;
+                    }
+                    updateProgress(index + 1, items.length, chatTitle);
+                } catch (error) {
+                    log(`Error processing ${type} ${index}: ${error.message}`);
                 }
-                updateProgress(index + 1, items.length, chatTitle);
-            } catch (error) {
-                log(`Error processing ${type} ${index}: ${error.message}`);
             }
-        }));
-    }));
+        } catch (error) {
+            log(`Error collecting ${type}: ${error.message}`);
+        }
+    }
+    
     return mediaContent;
 }
+
+
+// Enhanced document processing
+async function processDocument(button, chatTitle, index) {
+    const title = button.getAttribute('title') || '';
+    // Remove duplicate numbering from filename
+    const cleanTitle = title.replace(/\s*\(\d+\)\s*/, '');
+    const filename = `${chatTitle}/documents/${cleanTitle}`;
+    
+    if (!processedFiles.has(filename)) {
+        processedFiles.add(filename);
+        await simulateClick(button);
+        return filename;
+    }
+    return null;
+}
+
+// Enhanced message collection
+async function collectMessages(chatTitle) {
+    // Wait for messages to load completely
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const messages = document.querySelectorAll('div.message-in, div.message-out');
+    const uniqueMessages = new Set();
+    
+    messages.forEach(msg => {
+        const text = msg.querySelector(SELECTORS.MESSAGE.text)?.textContent.trim();
+        const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim();
+        const type = msg.matches('div.message-out') ? 'out' : 'in';
+        
+        if (text) {
+            // Create unique message identifier
+            const messageId = `${time}-${type}-${text.substring(0, 50)}`;
+            if (!uniqueMessages.has(messageId)) {
+                uniqueMessages.add(messageId);
+            }
+        }
+    });
+
+    // Format messages with proper count
+    let content = [
+        '\n===========================================',
+        `Chat Export: ${chatTitle.toUpperCase()}`,
+        `Date: ${new Date().toLocaleDateString('en-GB')}`,
+        `Messages: ${uniqueMessages.size}`,
+        '===========================================\n\n'
+    ].join('\n');
+
+    // Add messages maintaining order
+    messages.forEach(msg => {
+        const text = msg.querySelector(SELECTORS.MESSAGE.text);
+        const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim() || '';
+        
+        if (text) {
+            const messageText = text.textContent.trim();
+            const messageId = `${time}-${msg.matches('div.message-out') ? 'out' : 'in'}-${messageText.substring(0, 50)}`;
+            
+            if (uniqueMessages.has(messageId)) {
+                content += [
+                    `[${new Date().toLocaleDateString('en-GB')} ${time}] ${msg.matches('div.message-out') ? 'Me' : chatTitle}:`,
+                    `>>> ${messageText}`,
+                    msg.querySelector('img[src^="blob:"], video[src^="blob:"], [data-icon="document"]') ? '[Contains media]\n' : '',
+                    '-------------------------------------------\n\n'
+                ].join('\n');
+            }
+        }
+    });
+
+    return { content, count: uniqueMessages.size };
+}
+
+// Set to track processed files
 
 log('Content script loaded');
 initialize();
