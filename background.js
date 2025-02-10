@@ -18,10 +18,38 @@ let downloadQueue = Promise.resolve();
 const log = (msg) => console.log(`[WhatsApp Exporter] ${msg}`);
 let whatsappTabId = null;
 let originalTabId = null;
+let automationInProgress = false;
 const tabStates = new Map();
 const processedDownloads = new Set();
 
+// New function to enforce tab focus during automation
+async function enforceWhatsAppTabFocus() {
 
+    try {
+        // Check the current active tab
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        
+        // If not the WhatsApp tab, switch focus back
+        if (activeTab.id !== whatsappTabId) {
+            log('Redirecting focus back to WhatsApp tab');
+            await chrome.tabs.update(whatsappTabId, { active: true });
+        }
+    } catch (error) {
+        log(`Tab focus enforcement error: ${error.message}`);
+    }
+}
+async function saveCurrentTab() {
+    try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (activeTab?.id) {
+            originalTabId = activeTab.id;
+            return true;
+        }
+    } catch (error) {
+        log(`Error saving current tab: ${error.message}`);
+    }
+    return false;
+}
 chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error) => console.error('Side panel initialization error:', error));
@@ -219,6 +247,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         status: 'error', 
                         message: error.message 
                     }));
+                const focusInterval = setInterval(enforceWhatsAppTabFocus, 1000);
+                // Store the interval ID to clear it later
+                automationInProgress = focusInterval;
             } else {
                 sendResponse({ 
                     status: 'error', 
@@ -226,6 +257,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 });
             }
             return true;
+        case "enforceTabFocus":
+            enforceWhatsAppTabFocus().then(() => sendResponse({ status: 'focus enforced' }));
+            return true;
+        case "chatProcessed":
+            // Clear the focus interval after each chat is processed
+            clearInterval(automationInProgress);
+            automationInProgress = false;
+            break;
         case "chatsAvailable":
             chrome.runtime.sendMessage(request).catch(() => {});
             break;
@@ -253,6 +292,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case "automationComplete":
             restoreOriginalTab()
                 .then(() => {
+                    clearInterval(automationInProgress);
+                    automationInProgress = false;
                     // Reset download queue after completion
                     downloadQueue = Promise.resolve();
                     processedDownloads.clear();
@@ -267,6 +308,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case "exportProgress":
         case "exportComplete":
         case "automationError":
+            chrome.runtime.sendMessage(request).catch(() => {});
+            clearInterval(automationInProgress);
+            automationInProgress = false;
+            break;
         case "debugLog":
         case "whatsappLoginRequired":
             if (!sender.tab || sender.tab.id === whatsappTabId) {
@@ -281,6 +326,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     return true;
 });
+
 
 chrome.tabs.onRemoved.addListener((tabId) => {
     if (whatsappTabId === tabId) {

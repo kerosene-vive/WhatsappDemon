@@ -280,6 +280,12 @@ async function automateWhatsAppExport(selectedChats) {
         for (let chatTitle of selectedChats) {
             const chat = availableChats.find(c => c.title === chatTitle);
             if (!chat) continue;
+            
+            // Notify background script to enforce WhatsApp tab focus
+            await new Promise((resolve) => {
+                chrome.runtime.sendMessage({ action: "enforceTabFocus" }, resolve);
+            });
+
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(chat.clickableElement);
             await waitForElement(SELECTORS.CHAT.messageContainer);
@@ -293,6 +299,8 @@ async function automateWhatsAppExport(selectedChats) {
                     media: result.mediaContent
                 }
             });
+            // Notify background script that a chat has been processed
+            chrome.runtime.sendMessage({ action: "chatProcessed" });
         }
         chrome.runtime.sendMessage({ 
             action: "exportComplete",
