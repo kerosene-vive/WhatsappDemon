@@ -2,41 +2,46 @@ let availableChats = [];
 const cleanupPort = chrome.runtime.connect({ name: 'cleanup' });
 
 document.addEventListener('DOMContentLoaded', () => {
-    const loadingOverlay = createLoadingOverlay();
-    chrome.runtime.sendMessage({ action: 'initializeWhatsApp' });
-    const mainDownload = document.getElementById('mainDownload');
-    mainDownload.addEventListener('click', () => {
-        const selectedChats = [...document.querySelectorAll('.chat-item input:checked')].map(input => input.value);
-        if (!selectedChats.length) {
-            alert('Please select at least one chat');
-            return;
-        }
-        document.body.classList.add('loading');
-        document.querySelectorAll('.loading-circle:not(:first-child)').forEach(el => el.remove());
-        document.querySelectorAll('.loading-overlay:not(:first-child)').forEach(el => el.remove());
-        startMessageDownload(selectedChats);
-    });
+    initializeUI();
+    setupEventListeners();
 });
+
+function initializeUI() {
+    createLoadingOverlay();
+    chrome.runtime.sendMessage({ action: 'initializeWhatsApp' });
+}
+
+function setupEventListeners() {
+    const mainDownload = document.getElementById('mainDownload');
+    if (mainDownload) {
+        mainDownload.addEventListener('click', handleDownloadClick);
+    }
+}
+
+function handleDownloadClick() {
+    const selectedChats = [...document.querySelectorAll('.chat-item input:checked')]
+        .map(input => input.value);
+    if (!selectedChats.length) {
+        alert('Please select at least one chat');
+        return;
+    }
+    cleanupOverlays();
+    document.body.classList.add('loading');
+    startMessageDownload(selectedChats);
+}
+
+function cleanupOverlays() {
+    document.querySelectorAll('.loading-circle:not(:first-child)').forEach(el => el.remove());
+    document.querySelectorAll('.loading-overlay:not(:first-child)').forEach(el => el.remove());
+}
 
 function createLoadingOverlay(needsLogin = false) {
     const overlay = document.createElement('div');
     overlay.className = 'loading-overlay';
-    document.querySelector('.chat-selection')?.classList.add('hidden');
-    document.querySelector('#mainDownload')?.classList.add('hidden');
+    safelyAddClass('.chat-selection', 'hidden');
+    safelyAddClass('#mainDownload', 'hidden');
     if (needsLogin) {
-        const message = document.createElement('div');
-        message.className = 'login-message';
-        message.innerHTML = `
-            <div class="back-arrow">←</div>
-            <h2>Please Log Into WhatsApp</h2>
-            <p>Open WhatsApp on your phone:</p>
-            <ol>
-                <li>Tap Menu or Settings</li>
-                <li>Select Linked Devices</li>
-                <li>Scan the QR code</li>
-            </ol>
-        `;
-        overlay.appendChild(message);
+        overlay.appendChild(createLoginMessage());
     } else {
         const spinner = document.createElement('div');
         spinner.className = 'loading-spinner';
@@ -46,122 +51,156 @@ function createLoadingOverlay(needsLogin = false) {
     return overlay;
 }
 
-function createMessageHandler(loadingFill, completionMessage, buttons, taskName, statusText, originalTaskName) {
-    let totalChatsProcessed = 0;
-    return function messageHandler(message) {
-        switch (message.action) {
-            case "chatProgress":
-                if (loadingFill) {
-                    loadingFill.style.width = `${message.progress}%`;
-                }
-                if (statusText && message.chatTitle) {
-                    statusText.textContent = `Processing: ${message.chatTitle}`;
-                }
-                if (message.progress === 100) {
-                    totalChatsProcessed++;
-                }
-                break;                
-            case "exportComplete":
-                document.body.classList.remove('loading');
-                document.querySelector('.main-content')?.classList.remove('loading');               
-                if (completionMessage) {
-                    completionMessage.classList.add('show');
-                }
-                if (statusText) {
-                    statusText.textContent = 'All messages downloaded successfully!';
-                }                
-                playNotificationSound();
-                chrome.runtime.onMessage.removeListener(messageHandler);               
-                setTimeout(() => {
-                    resetUIState(buttons, taskName, statusText, loadingFill, originalTaskName);
-                    if (completionMessage) {
-                        completionMessage.classList.remove('show');
-                    }
-                }, 2000);
-                break;               
-            case "automationError":
-                document.body.classList.remove('loading');
-                document.querySelector('.main-content')?.classList.remove('loading');                
-                chrome.runtime.onMessage.removeListener(messageHandler);
-                resetUIState(buttons, taskName, statusText, loadingFill, originalTaskName);
-                if (statusText) {
-                    statusText.textContent = 'Error occurred. Please try again.';
-                }
-                break;
-        }
-    };
+function createLoginMessage() {
+    const message = document.createElement('div');
+    message.className = 'login-message';
+    message.innerHTML = `
+        <div class="back-arrow">←</div>
+        <h2>Please Log Into WhatsApp</h2>
+        <p>Open WhatsApp on your phone:</p>
+        <ol>
+            <li>Tap Menu or Settings</li>
+            <li>Select Linked Devices</li>
+            <li>Scan the QR code</li>
+        </ol>
+    `;
+    return message;
 }
 
 async function startMessageDownload(selectedChats) {
-    const loadingFill = document.querySelector('.loading-fill');
-    const completionMessage = document.querySelector('.completion-message');
-    const statusText = document.querySelector('.status-text');
-    if (loadingFill.style.width === '100%' || completionMessage.classList.contains('show')) {
-        resetTask(loadingFill, completionMessage, statusText);
-        await new Promise(resolve => setTimeout(resolve, 300));
+    const elements = {
+        loadingFill: document.querySelector('.loading-fill'),
+        completionMessage: document.querySelector('.completion-message'),
+        statusText: document.querySelector('.status-text'),
+        mainContent: document.querySelector('.main-content')
+    };
+    if (!validateElements(elements)) {
+        console.error('Required UI elements not found');
+        return;
     }
-    document.querySelectorAll('.chat-item input').forEach(checkbox => {
-        checkbox.disabled = true;
-    });
-    loadingFill.style.opacity = '0.1';
-    loadingFill.style.width = '20%';
+    if (needsReset(elements)) {
+        await resetUI(elements);
+    }
+    updateUIForDownload(elements);
     chrome.runtime.sendMessage({
         action: "startAutomation",
         selectedChats,
         includeMedia: false
     });
-    const messageHandler = createMessageHandler(loadingFill, completionMessage, [], null, statusText, '');
+    const messageHandler = createMessageHandler(
+        elements.loadingFill,
+        elements.completionMessage,
+        [],
+        null,
+        elements.statusText,
+        ''
+    );
     chrome.runtime.onMessage.addListener(messageHandler);
 }
 
-chrome.runtime.onMessage.addListener((message) => {
-    switch (message.action) {
-        case 'whatsappReady':
-            document.querySelector('.loading-overlay')?.remove();
-            createLoadingOverlay(false);
-            chrome.runtime.sendMessage({ action: 'getChats' }, response => {
-                if (response.chats) {
-                    availableChats = response.chats;
-                    updateChatSelection();
-                }
-            });
-            break;
-        case 'chatsAvailable':
-            availableChats = message.chats;
-            updateChatSelection();
-            document.querySelector('.loading-overlay')?.remove();
-            break;
-        case 'whatsappClosed':
-            location.reload();
-            break;
-        case 'whatsappLoginRequired':
-            document.querySelector('.loading-overlay')?.remove();
-            createLoadingOverlay(true);
-            break;
-    }
-});
-
-function updateChatSelection() {
-    const container = document.querySelector('.chat-selection') || createChatSelectionUI();
-    container.innerHTML = availableChats.map(chat => `
-        <div class="chat-item">
-            <input type="checkbox" id="${chat}" value="${chat}">
-            <label for="${chat}">${chat}</label>
-        </div>
-    `).join('');
-    document.querySelector('.loading-overlay')?.remove();
-    document.querySelector('.chat-selection')?.classList.remove('hidden');
-    document.querySelector('#mainDownload')?.classList.remove('hidden');
+function validateElements(elements) {
+    return elements.loadingFill && elements.completionMessage && elements.statusText;
 }
 
-function createChatSelectionUI() {
-    const container = document.createElement('div');
-    container.className = 'chat-selection';
-    document.querySelector('.main-content').appendChild(container);
-    return container;
+function needsReset(elements) {
+    return elements.loadingFill.style.width === '100%' || 
+           elements.completionMessage.classList.contains('show');
+}
+
+async function resetUI(elements) {
+    resetTask(elements.loadingFill, elements.completionMessage, elements.statusText);
+    await new Promise(resolve => setTimeout(resolve, 300));
+}
+
+function updateUIForDownload(elements) {
+    document.querySelectorAll('.chat-item input').forEach(checkbox => {
+        checkbox.disabled = true;
+    });
+    if (elements.mainContent) {
+        elements.mainContent.classList.add('loading');
+    }
+    elements.loadingFill.style.opacity = '0.1';
+    elements.loadingFill.style.width = '20%';
+}
+
+function createMessageHandler(loadingFill, completionMessage, buttons, taskName, statusText, originalTaskName) {
+    let totalChatsProcessed = 0;
+    return function messageHandler(message) {
+        switch (message.action) {
+            case "chatProgress":
+                handleChatProgress(message, loadingFill, statusText, totalChatsProcessed);
+                break;
+                
+            case "exportComplete":
+                handleExportComplete(completionMessage, statusText, buttons, taskName, loadingFill, originalTaskName, messageHandler);
+                break;
+                
+            case "automationError":
+                handleAutomationError(statusText, buttons, taskName, loadingFill, originalTaskName, messageHandler);
+                break;
+        }
+    };
+}
+
+function handleChatProgress(message, loadingFill, statusText, totalChatsProcessed) {
+    if (loadingFill && typeof message.progress === 'number') {
+        loadingFill.style.width = `${message.progress}%`;
+    }
+    if (statusText && message.chatTitle) {
+        statusText.textContent = `Processing: ${message.chatTitle}`;
+    }
+    if (message.progress === 100) {
+        totalChatsProcessed++;
+    }
+}
+
+function handleExportComplete(completionMessage, statusText, buttons, taskName, loadingFill, originalTaskName, messageHandler) {
+    safelyRemoveClass(document.body, 'loading');
+    safelyRemoveClass('.main-content', 'loading');
+    if (completionMessage) {
+        completionMessage.classList.add('show');
+    }
+    if (statusText) {
+        statusText.textContent = 'All messages downloaded successfully!';
+    }
+    playNotificationSound();
+    chrome.runtime.onMessage.removeListener(messageHandler);
+    setTimeout(() => {
+        resetUIState(buttons, taskName, statusText, loadingFill, originalTaskName);
+        if (completionMessage) {
+            completionMessage.classList.remove('show');
+        }
+    }, 2000);
+}
+
+function handleAutomationError(statusText, buttons, taskName, loadingFill, originalTaskName, messageHandler) {
+    safelyRemoveClass(document.body, 'loading');
+    safelyRemoveClass('.main-content', 'loading');
+    chrome.runtime.onMessage.removeListener(messageHandler);
+    resetUIState(buttons, taskName, statusText, loadingFill, originalTaskName);
+    if (statusText) {
+        statusText.textContent = 'Error occurred. Please try again.';
+    }
+}
+
+function safelyAddClass(selector, className) {
+    const element = document.querySelector(selector);
+    if (element) {
+        element.classList.add(className);
+    }
+}
+
+function safelyRemoveClass(selectorOrElement, className) {
+    const element = typeof selectorOrElement === 'string' 
+        ? document.querySelector(selectorOrElement)
+        : selectorOrElement;
+    if (element) {
+        element.classList.remove(className);
+    }
 }
 
 function resetTask(loadingFill, completionMessage, statusText) {
+    if (!loadingFill || !completionMessage) return;
     loadingFill.style.transition = 'none';
     loadingFill.style.width = '0%';
     loadingFill.style.opacity = '0.1';
@@ -173,9 +212,11 @@ function resetTask(loadingFill, completionMessage, statusText) {
 
 function resetUIState(buttons, taskName, statusText, loadingFill, originalTaskName) {
     if (buttons) {
-        buttons.forEach(btn => btn.disabled = false);
+        buttons.forEach(btn => {
+            if (btn) btn.disabled = false;
+        });
     }
-    if (taskName) {
+    if (taskName && originalTaskName) {
         taskName.textContent = originalTaskName;
     }
     if (statusText) {
@@ -184,11 +225,13 @@ function resetUIState(buttons, taskName, statusText, loadingFill, originalTaskNa
     document.querySelectorAll('.chat-item input').forEach(checkbox => {
         checkbox.disabled = false;
     });
-    loadingFill.style.transition = 'none';
-    loadingFill.style.width = '0%';
-    loadingFill.style.opacity = '0.1';
-    loadingFill.offsetHeight;
-    loadingFill.style.transition = 'all 1.5s ease';
+    if (loadingFill) {
+        loadingFill.style.transition = 'none';
+        loadingFill.style.width = '0%';
+        loadingFill.style.opacity = '0.1';
+        loadingFill.offsetHeight;
+        loadingFill.style.transition = 'all 1.5s ease';
+    }
 }
 
 function playNotificationSound() {
@@ -196,5 +239,64 @@ function playNotificationSound() {
     if (audio) {
         audio.play().catch(error => console.log('Error playing sound:', error));
     }
+}
 
+chrome.runtime.onMessage.addListener((message) => {
+    switch (message.action) {
+        case 'whatsappReady':
+            handleWhatsAppReady();
+            break;
+        case 'chatsAvailable':
+            handleChatsAvailable(message.chats);
+            break;
+        case 'whatsappClosed':
+            location.reload();
+            break;
+        case 'whatsappLoginRequired':
+            handleLoginRequired();
+            break;
+    }
+});
+
+function handleWhatsAppReady() {
+    document.querySelector('.loading-overlay')?.remove();
+    createLoadingOverlay(false);
+    chrome.runtime.sendMessage({ action: 'getChats' }, response => {
+        if (response.chats) {
+            availableChats = response.chats;
+            updateChatSelection();
+        }
+    });
+}
+
+function handleChatsAvailable(chats) {
+    availableChats = chats;
+    updateChatSelection();
+    document.querySelector('.loading-overlay')?.remove();
+}
+
+function handleLoginRequired() {
+    document.querySelector('.loading-overlay')?.remove();
+    createLoadingOverlay(true);
+}
+
+function updateChatSelection() {
+    const container = document.querySelector('.chat-selection') || createChatSelectionUI();
+    container.innerHTML = availableChats.map(chat => `
+        <div class="chat-item">
+            <input type="checkbox" id="${chat}" value="${chat}">
+            <label for="${chat}">${chat}</label>
+        </div>
+    `).join('');
+    
+    document.querySelector('.loading-overlay')?.remove();
+    safelyRemoveClass('.chat-selection', 'hidden');
+    safelyRemoveClass('#mainDownload', 'hidden');
+}
+
+function createChatSelectionUI() {
+    const container = document.createElement('div');
+    container.className = 'chat-selection';
+    document.querySelector('.main-content')?.appendChild(container);
+    return container;
 }

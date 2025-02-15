@@ -1,44 +1,44 @@
 <!DOCTYPE html>
 <html>
 <head>
-   <title>WhatsApp Demon</title>
-   <meta charset="UTF-8">
-   <link rel="stylesheet" href="popup.css">
+    <title>WhatsApp Demon</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-   <audio id="notificationSound" src="notification.wav" preload="auto"></audio>
-   <div class="container">
-       <div class="header">
-           <img src="icons/header.png" alt="Assistant Icon" class="header-icon">
-           <div class="header-text">WhatsApp Demon</div>
-       </div>
-       <div class="main-content">
-           <div class="chat-selection">
-               <div class="chat-selection-header">
-                   <span>Select Chats</span>
-                   <button id="selectAll">Select All</button>
-               </div>
-               <div id="chatList" class="chat-list"></div>
-           </div>
-           <div class="loading-container">
-            <div class="loading-circle"></div>
+    <audio id="notificationSound" src="notification.wav" preload="auto"></audio>
+    <div class="container">
+        <div class="header">
+            <img src="icons/header.png" alt="Assistant Icon" class="header-icon">
+            <div class="header-text">WhatsApp Demon</div>
         </div>
-           <button class="play-button" id="mainDownload">
-            <svg viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z"/>
-            </svg>
-        </button>
-           <div class="task-groups">
-               <div class="task-group" id="text-export">
-                   <div class="loading-fill"></div>
-                   <div class="task-content">
-                    <div class="status-text">
-                    <div class="completion-message"></div>
-                   </div>
-               </div>
-           </div>
-       </div>
-   </div>
-   <script src="popup.js"></script>
+        <div class="main-content">
+            <div class="chat-selection">
+                <div class="chat-selection-header">
+                    <span>Select Chats</span>
+                    <button id="selectAll">Select All</button>
+                </div>
+                <div id="chatList" class="chat-list"></div>
+            </div>
+            <div class="loading-container">
+                <div class="loading-circle"></div>
+            </div>
+            <button class="play-button" id="mainDownload">
+                <svg viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                </svg>
+            </button>
+            <div class="task-groups">
+                <div class="task-group" id="text-export">
+                    <div class="loading-fill"></div>
+                    <div class="task-content">
+                        <div class="status-text"></div>
+                        <div class="completion-message"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="popup.js"></script>
 </body>
 </html>
