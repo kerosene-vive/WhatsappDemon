@@ -6,29 +6,32 @@ let availableChats = [];
 let processingAutomation = false;
 const processedFiles = new Set();
 let resizeTimer;
+
 const VIEWPORT = {
     checkInterval: 1000,
     resizeDebounce: 250,
     minWidth: 300
 };
+
 const monitorViewport = () => {
     window.addEventListener('resize', () => {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(handleResize, VIEWPORT.resizeDebounce);
     });
-    
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
             reinitializeIfNeeded();
         }
     });
 };
+
 const handleResize = async () => {
     const viewport = document.querySelector(SELECTORS.CHAT.viewport);
     if (!viewport || viewport.offsetWidth < VIEWPORT.minWidth) {
         await reinitializeIfNeeded();
     }
 };
+
 const reinitializeIfNeeded = async () => {
     if (!isInitialized || processingAutomation) {
         isInitialized = false;
@@ -36,6 +39,7 @@ const reinitializeIfNeeded = async () => {
         await initialize();
     }
 };
+
 const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => 
     new Promise((resolve, reject) => {
         const checkElement = () => {
@@ -43,7 +47,6 @@ const waitForElement = (selector, timeout = TIMEOUTS.LOAD) =>
             if (element && isElementVisible(element)) {
                 return resolve(element);
             }
-            
             const observer = new MutationObserver((mutations, obs) => {
                 const element = document.querySelector(selector);
                 if (element && isElementVisible(element)) {
@@ -51,25 +54,23 @@ const waitForElement = (selector, timeout = TIMEOUTS.LOAD) =>
                     resolve(element);
                 }
             });
-            
             observer.observe(document.body, {
                 childList: true,
                 subtree: true,
                 attributes: true
             });
-            
             setTimeout(() => {
                 observer.disconnect();
                 reject(new Error(`Timeout: ${selector}`));
             }, timeout);
         };
-        
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', checkElement);
         } else {
             checkElement();
         }
-    });
+});
+
 const isElementVisible = (element) => {
     const rect = element.getBoundingClientRect();
     return (
@@ -80,21 +81,17 @@ const isElementVisible = (element) => {
     );
 };
 
-
 async function maximizeWindow() {
     const viewport = document.querySelector(SELECTORS.CHAT.viewport);
     if (!viewport) return false;
-    
     const originalStyles = {
         width: viewport.style.width,
         height: viewport.style.height,
         position: viewport.style.position
     };
-    
     viewport.style.position = 'fixed';
     viewport.style.width = '100vw';
     viewport.style.height = '100vh';
-    
     await new Promise(resolve => setTimeout(resolve, 500));
     return originalStyles;
 }
@@ -103,19 +100,17 @@ async function restoreWindow(viewport, originalStyles) {
     if (!viewport || !originalStyles) return;
     Object.assign(viewport.style, originalStyles);
 }
+
 async function initialize() {
     if (isInitialized || initializationAttempts >= MAX_INIT_ATTEMPTS) return isInitialized;
-    
     initializationAttempts++;
     try {
-        // Maximize chat container
         const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
         if (container) {
             container.style.height = '100vh';
             container.style.maxHeight = 'none';
             container.style.overflow = 'auto';
         }
-
         const viewport = document.querySelector(SELECTORS.CHAT.viewport);
         if (viewport) {
             viewport.style.width = '100vw';
@@ -125,40 +120,32 @@ async function initialize() {
             viewport.style.top = '0';
             viewport.style.left = '0';
         }
-        
         const isVisible = !document.hidden;
         if (!isVisible) {
             setTimeout(initialize, TIMEOUTS.INIT_RETRY);
             return false;
         }
-        
         const qrCode = document.querySelector('div[data-ref]');
         const chatList = document.querySelector('#pane-side');
-        
         if (qrCode && !chatList) {
             chrome.runtime.sendMessage({ action: 'whatsappLoginRequired' });
             setTimeout(() => { initializationAttempts--; initialize(); }, 1000);
             return false;
         }
-        
         if (!await waitForElement('#pane-side', 10000)) {
             setTimeout(initialize, TIMEOUTS.INIT_RETRY);
             return false;
         }
-        
         await new Promise(resolve => setTimeout(resolve, 1000));
         availableChats = await getChatsList();
-        
         if (availableChats.length === 0) {
             setTimeout(initialize, TIMEOUTS.INIT_RETRY);
             return false;
         }
-        
         chrome.runtime.sendMessage({ 
             action: 'chatsAvailable', 
             chats: availableChats.map(chat => chat.title)
         });
-        
         isInitialized = true;
         return true;
     } catch (error) {
@@ -169,6 +156,7 @@ async function initialize() {
         return false;
     }
 }
+
 const SELECTORS = {
     CHAT_LIST: { container: '#pane-side', messages: '[role="row"]', mainPanel: '#main' },
     MESSAGE: {
@@ -207,7 +195,6 @@ const TIMEOUTS = {
     SCROLL_ATTEMPTS: 100
 };
 
-
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     switch(request.action) {
         case "ping":
@@ -236,7 +223,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     return true;
 });
-
 
 async function initialize() {
     if (isInitialized || initializationAttempts >= MAX_INIT_ATTEMPTS) return isInitialized;
@@ -274,18 +260,15 @@ async function initialize() {
     }
 }
 
-
 async function automateWhatsAppExport(selectedChats) {
     try {
         for (let chatTitle of selectedChats) {
             const chat = availableChats.find(c => c.title === chatTitle);
             if (!chat) continue;
-            
-            // Notify background script to enforce WhatsApp tab focus
             await new Promise((resolve) => {
-                chrome.runtime.sendMessage({ action: "enforceTabFocus" }, resolve);
-            });
-
+                    chrome.runtime.sendMessage({ action: "enforceTabFocus" }, resolve);
+                });
+    
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(chat.clickableElement);
             await waitForElement(SELECTORS.CHAT.messageContainer);
@@ -299,7 +282,6 @@ async function automateWhatsAppExport(selectedChats) {
                     media: result.mediaContent
                 }
             });
-            // Notify background script that a chat has been processed
             chrome.runtime.sendMessage({ action: "chatProcessed" });
         }
         chrome.runtime.sendMessage({ 
@@ -313,9 +295,6 @@ async function automateWhatsAppExport(selectedChats) {
         });
     }
 }
-
-
-
 
 async function extractChatContentAndMedia(chatTitle) {
     try {
@@ -346,8 +325,6 @@ async function extractChatContentAndMedia(chatTitle) {
     }
 }
 
-
-
 async function scrollChatToTop() {
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
     if (!container) return;
@@ -367,7 +344,6 @@ async function scrollChatToTop() {
     }
     await new Promise(resolve => setTimeout(resolve, 1000));
 }
-
 
 function processMessages(messages, chatTitle, mediaContent) {
     let content = [
@@ -397,12 +373,10 @@ function processMessages(messages, chatTitle, mediaContent) {
     return content;
 }
 
-
 const log = msg => {
     console.log(`[WhatsApp Export] ${msg}`);
     chrome.runtime.sendMessage({ action: "debugLog", message: msg }).catch(() => {});
 };
-
 
 const downloadMedia = async (blob, filename) => {
     chrome.runtime.sendMessage({
@@ -410,7 +384,6 @@ const downloadMedia = async (blob, filename) => {
         data: { url: URL.createObjectURL(blob), filename, type: blob.type }
     });
 };
-
 
 const updateProgress = (current, total, chatTitle) => {
     chrome.runtime.sendMessage({
@@ -420,7 +393,6 @@ const updateProgress = (current, total, chatTitle) => {
         mediaCount: current
     });
 };
-
 
 const simulateClick = element => {
     const rect = element.getBoundingClientRect();
@@ -435,9 +407,6 @@ const simulateClick = element => {
     );
 };
 
-
-
-
 async function processMediaItem(url, chatTitle, index, type) {
         try {
             const response = await fetch(url);
@@ -451,7 +420,6 @@ async function processMediaItem(url, chatTitle, index, type) {
             return null;
         }
 }
-
 
 const getChatsList = async () => {
     const container = await waitForElement(SELECTORS.CHAT_LIST.container);
@@ -475,7 +443,6 @@ const getChatsList = async () => {
         .filter(chat => chat !== null);
 };
 
-
 const findDownloadButton = async (container) => {
     const downloadSelectors = [
         'span[data-icon="download"]',
@@ -496,11 +463,9 @@ const findDownloadButton = async (container) => {
 async function scrollAndCollectMedia(type) {
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
     if (!container) throw new Error('No scroll container');
-    
     const mediaItems = new Map();
     let lastHeight = container.scrollHeight;
     let unchangedCount = 0;
-    
     const collectCurrentView = () => {
         const selector = SELECTORS.MEDIA_ELEMENTS[type];
         document.querySelectorAll(selector).forEach(el => {
@@ -522,15 +487,12 @@ async function scrollAndCollectMedia(type) {
             }
         });
     };
-
     container.scrollTop = 0;
     await new Promise(resolve => setTimeout(resolve, 500));
-
     for (let i = 0; i < 50 && unchangedCount < 5; i++) {
         collectCurrentView();
         container.scrollTop += 500;
         await new Promise(resolve => setTimeout(resolve, 300));
-        
         const currentHeight = container.scrollHeight;
         if (Math.abs(currentHeight - lastHeight) < 10) {
             unchangedCount++;
@@ -539,7 +501,6 @@ async function scrollAndCollectMedia(type) {
             lastHeight = currentHeight;
         }
     }
-
     return Array.from(type === 'documents' ? mediaItems.values() : mediaItems.keys());
 }
 
@@ -549,9 +510,7 @@ async function collectAllMedia(chatTitle) {
         documents: new Set(),
         links: new Set()
     };
-    
     await scrollChatToTop();
-    
     for (const type of Object.keys(mediaContent)) {
         try {
             const items = await scrollAndCollectMedia(type);
@@ -566,14 +525,12 @@ async function collectAllMedia(chatTitle) {
                             const blob = await response.blob();
                             await downloadMedia(blob, filename);
                             mediaContent[type].push(item);
-                            break;
-                            
+                            break; 
                         case 'documents':
                             const docResult = await processDocument(item, chatTitle, index);
                             if (docResult) mediaContent.documents.add(docResult);
                             await new Promise(resolve => setTimeout(resolve, 200));
                             break;
-                            
                         case 'links':
                             mediaContent.links.add(item);
                             break;
@@ -587,18 +544,13 @@ async function collectAllMedia(chatTitle) {
             log(`Error collecting ${type}: ${error.message}`);
         }
     }
-    
     return mediaContent;
 }
 
-
-// Enhanced document processing
 async function processDocument(button, chatTitle, index) {
     const title = button.getAttribute('title') || '';
-    // Remove duplicate numbering from filename
     const cleanTitle = title.replace(/\s*\(\d+\)\s*/, '');
     const filename = `${chatTitle}/documents/${cleanTitle}`;
-    
     if (!processedFiles.has(filename)) {
         processedFiles.add(filename);
         await simulateClick(button);
@@ -607,29 +559,21 @@ async function processDocument(button, chatTitle, index) {
     return null;
 }
 
-// Enhanced message collection
 async function collectMessages(chatTitle) {
-    // Wait for messages to load completely
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
     const messages = document.querySelectorAll('div.message-in, div.message-out');
     const uniqueMessages = new Set();
-    
     messages.forEach(msg => {
         const text = msg.querySelector(SELECTORS.MESSAGE.text)?.textContent.trim();
         const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim();
         const type = msg.matches('div.message-out') ? 'out' : 'in';
-        
         if (text) {
-            // Create unique message identifier
             const messageId = `${time}-${type}-${text.substring(0, 50)}`;
             if (!uniqueMessages.has(messageId)) {
                 uniqueMessages.add(messageId);
             }
         }
     });
-
-    // Format messages with proper count
     let content = [
         '\n===========================================',
         `Chat Export: ${chatTitle.toUpperCase()}`,
@@ -637,16 +581,12 @@ async function collectMessages(chatTitle) {
         `Messages: ${uniqueMessages.size}`,
         '===========================================\n\n'
     ].join('\n');
-
-    // Add messages maintaining order
     messages.forEach(msg => {
         const text = msg.querySelector(SELECTORS.MESSAGE.text);
         const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim() || '';
-        
         if (text) {
             const messageText = text.textContent.trim();
             const messageId = `${time}-${msg.matches('div.message-out') ? 'out' : 'in'}-${messageText.substring(0, 50)}`;
-            
             if (uniqueMessages.has(messageId)) {
                 content += [
                     `[${new Date().toLocaleDateString('en-GB')} ${time}] ${msg.matches('div.message-out') ? 'Me' : chatTitle}:`,
@@ -657,11 +597,8 @@ async function collectMessages(chatTitle) {
             }
         }
     });
-
     return { content, count: uniqueMessages.size };
 }
-
-// Set to track processed files
 
 log('Content script loaded');
 initialize();
