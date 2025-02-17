@@ -1,11 +1,6 @@
 let availableChats = [];
 const cleanupPort = chrome.runtime.connect({ name: 'cleanup' });
 
-// Initialization
-document.addEventListener('DOMContentLoaded', () => {
-    initializeUI();
-    setupEventListeners();
-});
 
 function initializeUI() {
     createLoadingOverlay();
