@@ -227,6 +227,12 @@ async function handleWhatsApp() {
 async function forwardMessage(request, sender) {
     if (!sender.tab || sender.tab.id !== whatsappTabId) return;
     try {
+        if (request.action === "exportProgress" && request.stats?.dateRange) {
+            request.stats.dateRange = {
+                start: new Date(request.stats.dateRange.start).toLocaleDateString(),
+                end: new Date(request.stats.dateRange.end).toLocaleDateString()
+            };
+        }
         await chrome.runtime.sendMessage(request);
     } catch (error) {
         if (!error.message.includes('disconnected')) {
@@ -269,25 +275,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     message: error.message 
                 }));
             return true;
-        case "startAutomation":
-            if (whatsappTabId) {
-                startFocusInterval();
-                chrome.tabs.sendMessage(whatsappTabId, request)
-                    .then(() => sendResponse({ status: 'automation started' }))
-                    .catch(error => {
-                        clearFocusInterval();
-                        sendResponse({ 
-                            status: 'error', 
-                            message: error.message 
+            case "startAutomation":
+                if (whatsappTabId) {
+                    startFocusInterval();
+                    // Forward the date range to content script
+                    chrome.tabs.sendMessage(whatsappTabId, {
+                        action: 'startAutomation',
+                        selectedChats: request.selectedChats,
+                        startDate: request.startDate,
+                        endDate: request.endDate,
+                        includeMedia: request.includeMedia
+                    })
+                        .then(() => sendResponse({ status: 'automation started' }))
+                        .catch(error => {
+                            clearFocusInterval();
+                            sendResponse({ 
+                                status: 'error', 
+                                message: error.message 
+                            });
                         });
+                } else {
+                    sendResponse({ 
+                        status: 'error', 
+                        message: 'WhatsApp tab not initialized' 
                     });
-            } else {
-                sendResponse({ 
-                    status: 'error', 
-                    message: 'WhatsApp tab not initialized' 
-                });
-            }
-            return true;
+                }
+                return true;
         case "enforceTabFocus":
             enforceWhatsAppTabFocus()
                 .then(() => sendResponse({ status: 'focus enforced' }));
