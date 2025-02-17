@@ -561,12 +561,134 @@ async function processDocument(button, chatTitle, index) {
 
 async function collectMessages(chatTitle) {
     await new Promise(resolve => setTimeout(resolve, 1000));
-    const messages = document.querySelectorAll('div.message-in, div.message-out');
+    
+    // Debugging: Log all found message selectors
+    console.log('Message Containers:', document.querySelectorAll('div.message-in, div.message-out').length);
+    console.log('Alternative Message Selectors:', 
+        document.querySelectorAll('div[role="row"][data-testid="msg-container"]').length,
+        document.querySelectorAll('div[data-testid="chat-msg-container"]').length
+    );
+
+    // Try multiple message selectors
+    const messageSelectors = [
+        'div.message-in, div.message-out',
+        'div[role="row"][data-testid="msg-container"]',
+        'div[data-testid="chat-msg-container"]'
+    ];
+
+    let messages = [];
+    for (const selector of messageSelectors) {
+        const foundMessages = document.querySelectorAll(selector);
+        if (foundMessages.length > 0) {
+            messages = Array.from(foundMessages);
+            break;
+        }
+    }
+
+    console.log('Found Messages:', messages.length);
+    
     const uniqueMessages = new Set();
-    messages.forEach(msg => {
-        const text = msg.querySelector(SELECTORS.MESSAGE.text)?.textContent.trim();
-        const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim();
-        const type = msg.matches('div.message-out') ? 'out' : 'in';
+    let availableDates = [];
+
+    // Reliable date extraction strategy
+    const extractChatDates = () => {
+        // Function to check if a text looks like a valid date
+        const isValidDate = (text) => {
+            const dateRegex = /^\d{2}\/\d{2}\/\d{4}$/;
+            return dateRegex.test(text);
+        };
+
+        // Collect all text content from the chat
+        const allTextNodes = [];
+        const walkDOM = (node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const text = node.textContent.trim();
+                if (text) allTextNodes.push(text);
+            }
+            for (let i = 0; i < node.childNodes.length; i++) {
+                walkDOM(node.childNodes[i]);
+            }
+        };
+        walkDOM(document.body);
+
+        // Filter and collect unique dates
+        const uniqueDates = new Set(
+            allTextNodes
+                .filter(isValidDate)
+        );
+
+        console.log('Found Dates:', Array.from(uniqueDates));
+
+        // Sort dates if multiple found
+        const dates = Array.from(uniqueDates).sort((a, b) => {
+            const [da, ma, ya] = a.split('/').map(Number);
+            const [db, mb, yb] = b.split('/').map(Number);
+            const dateA = new Date(ya, ma - 1, da);
+            const dateB = new Date(yb, mb - 1, db);
+            return dateB.getTime() - dateA.getTime();
+        });
+
+        availableDates = dates;
+        return dates.length > 0 ? dates[0] : new Date().toLocaleDateString('en-GB');
+    };
+
+    // Extract chat dates
+    const defaultChatDate = extractChatDates();
+
+    // Modified date assignment strategy
+    const getMessageDate = (msg, index, fallbackDate) => {
+        // Method 1: Find nearest date before/after message
+        const dateNearMessage = availableDates.find((date, i) => {
+            const prevDate = i > 0 ? availableDates[i-1] : null;
+            if (prevDate) {
+                // Check if this message's index is proportionally between the two dates
+                const proportionalIndex = Math.floor(
+                    (index / messages.length) * (availableDates.length - 1)
+                );
+                return availableDates[proportionalIndex] === date;
+            }
+            return false;
+        });
+
+        return dateNearMessage || fallbackDate;
+    };
+
+    // Collect unique messages
+    const messageTextSelectors = [
+        '[data-testid="tail-container"] span',
+        '.selectable-text.copyable-text',
+        'span[dir="auto"]'
+    ];
+
+    const messageTimeSelectors = [
+        '[data-testid="primary-detail"] span',
+        '.x3nfvp2.xxymvpz',
+        'span[data-testid="msg-time"]'
+    ];
+
+    messages.forEach((msg, index) => {
+        let text, time;
+        
+        // Try multiple text selectors
+        for (const selector of messageTextSelectors) {
+            const textEl = msg.querySelector(selector);
+            if (textEl) {
+                text = textEl.textContent.trim();
+                break;
+            }
+        }
+
+        // Try multiple time selectors
+        for (const selector of messageTimeSelectors) {
+            const timeEl = msg.querySelector(selector);
+            if (timeEl) {
+                time = timeEl.textContent.trim();
+                break;
+            }
+        }
+
+        const type = msg.matches && msg.matches('.message-out') ? 'out' : 'in';
+        
         if (text) {
             const messageId = `${time}-${type}-${text.substring(0, 50)}`;
             if (!uniqueMessages.has(messageId)) {
@@ -574,29 +696,71 @@ async function collectMessages(chatTitle) {
             }
         }
     });
+    
+    // Create content with export details
     let content = [
         '\n===========================================',
         `Chat Export: ${chatTitle.toUpperCase()}`,
-        `Date: ${new Date().toLocaleDateString('en-GB')}`,
+        `Default Chat Date: ${defaultChatDate}`,
         `Messages: ${uniqueMessages.size}`,
         '===========================================\n\n'
     ].join('\n');
-    messages.forEach(msg => {
-        const text = msg.querySelector(SELECTORS.MESSAGE.text);
-        const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim() || '';
+    
+    // Process and format each message
+    const sortedMessages = messages.sort((a, b) => {
+        let timeA = '', timeB = '';
+        
+        for (const selector of messageTimeSelectors) {
+            const elA = a.querySelector(selector);
+            const elB = b.querySelector(selector);
+            if (elA) timeA = elA.textContent.trim();
+            if (elB) timeB = elB.textContent.trim();
+            if (timeA || timeB) break;
+        }
+        
+        return timeA.localeCompare(timeB);
+    });
+
+    sortedMessages.forEach((msg, index) => {
+        let text, time;
+        
+        // Try multiple text selectors
+        for (const selector of messageTextSelectors) {
+            const textEl = msg.querySelector(selector);
+            if (textEl) {
+                text = textEl.textContent.trim();
+                break;
+            }
+        }
+
+        // Try multiple time selectors
+        for (const selector of messageTimeSelectors) {
+            const timeEl = msg.querySelector(selector);
+            if (timeEl) {
+                time = timeEl.textContent.trim();
+                break;
+            }
+        }
+        
         if (text) {
-            const messageText = text.textContent.trim();
-            const messageId = `${time}-${msg.matches('div.message-out') ? 'out' : 'in'}-${messageText.substring(0, 50)}`;
+            const messageId = `${time}-${msg.matches && msg.matches('.message-out') ? 'out' : 'in'}-${text.substring(0, 50)}`;
+            
             if (uniqueMessages.has(messageId)) {
+                // Dynamically assign date based on message index
+                const messageDate = getMessageDate(msg, index, defaultChatDate);
+                
                 content += [
-                    `[${new Date().toLocaleDateString('en-GB')} ${time}] ${msg.matches('div.message-out') ? 'Me' : chatTitle}:`,
-                    `>>> ${messageText}`,
+                    `[${messageDate} ${time}] ${msg.matches && msg.matches('.message-out') ? 'Me' : chatTitle}:`,
+                    `>>> ${text}`,
                     msg.querySelector('img[src^="blob:"], video[src^="blob:"], [data-icon="document"]') ? '[Contains media]\n' : '',
                     '-------------------------------------------\n\n'
                 ].join('\n');
             }
         }
     });
+
+    console.log('Final Unique Messages:', uniqueMessages.size);
+
     return { content, count: uniqueMessages.size };
 }
 
