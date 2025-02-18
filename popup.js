@@ -103,28 +103,13 @@ function createDateSelectionUI() {
     
     dateSelection.innerHTML = `
         <div class="date-selection-content">
-            <h3>Select Date Range</h3>
-            <div class="date-field">
-                <label>From:</label>
-                <div class="month-year-select">
-                    <select id="startMonth" required>
-                        ${generateMonthOptions()}
-                    </select>
-                    <select id="startYear" required>
-                        ${generateYearOptions()}
-                    </select>
-                </div>
-            </div>
-            <div class="date-field">
-                <label>To:</label>
-                <div class="month-year-select">
-                    <select id="endMonth" required>
-                        ${generateMonthOptions()}
-                    </select>
-                    <select id="endYear" required>
-                        ${generateYearOptions()}
-                    </select>
-                </div>
+            <h3>Select Time Range</h3>
+            <div class="range-selection">
+                <select id="timeRange" class="time-range-select">
+                    <option value="week">Last Week</option>
+                    <option value="month">Last Month</option>
+                    <option value="year">Last Year</option>
+                </select>
             </div>
             <div class="date-actions">
                 <button class="confirm-dates">Start Export</button>
@@ -138,7 +123,6 @@ function createDateSelectionUI() {
         mainContent.appendChild(dateSelection);
     }
     
-    setDefaultDateValues(dateSelection);
     setupDateSelectionListeners(dateSelection);
     return dateSelection;
 }
@@ -188,47 +172,21 @@ function setDefaultDateValues(dateSelection) {
 function setupDateSelectionListeners(dateSelection) {
     const confirmBtn = dateSelection.querySelector('.confirm-dates');
     const cancelBtn = dateSelection.querySelector('.cancel-dates');
-    
-    const startMonth = dateSelection.querySelector('#startMonth');
-    const startYear = dateSelection.querySelector('#startYear');
-    const endMonth = dateSelection.querySelector('#endMonth');
-    const endYear = dateSelection.querySelector('#endYear');
+    const rangeSelect = dateSelection.querySelector('#timeRange');
 
     confirmBtn.addEventListener('click', () => {
         try {
-            const startDate = getFirstDayOfMonth(
-                parseInt(startYear.value),
-                parseInt(startMonth.value)
-            );
-            const endDate = getLastDayOfMonth(
-                parseInt(endYear.value),
-                parseInt(endMonth.value)
-            );
+            const endDate = calculateEndDate(rangeSelect.value);
             
-            if (!isValidDate(startDate) || !isValidDate(endDate)) {
-                alert('Invalid date selection');
-                return;
-            }
-            
-            if (startDate > endDate) {
-                alert('Start date cannot be after end date');
-                return;
-            }
-
             const selectedChats = [...document.querySelectorAll('.chat-item input:checked')]
                 .map(input => input.value);
 
             dateSelection.classList.remove('show');
             document.body.classList.add('loading');
             
-            const formattedStartDate = formatDateForAPI(startDate);
-            const formattedEndDate = formatDateForAPI(endDate);
-            
             startMessageDownload(selectedChats, {
-                startDate: formattedStartDate,
-                endDate: formattedEndDate,
+                endDate: formatDateForAPI(endDate),
                 displayRange: {
-                    start: startDate.toLocaleDateString(),
                     end: endDate.toLocaleDateString()
                 }
             });
@@ -236,12 +194,6 @@ function setupDateSelectionListeners(dateSelection) {
             console.error('Date processing error:', error);
             alert('Error processing dates. Please try again.');
         }
-    });
-
-    [startMonth, startYear, endMonth, endYear].forEach(element => {
-        element.addEventListener('change', () => {
-            validateDateRange(startMonth, startYear, endMonth, endYear, confirmBtn);
-        });
     });
 
     cancelBtn.addEventListener('click', () => {
@@ -252,9 +204,6 @@ function setupDateSelectionListeners(dateSelection) {
 }
 
 // Date Utility Functions
-function isValidDate(date) {
-    return date instanceof Date && !isNaN(date);
-}
 
 function validateDateRange(startMonth, startYear, endMonth, endYear, confirmBtn) {
     try {
@@ -294,6 +243,11 @@ function getLastDayOfMonth(year, month) {
     return date;
 }
 
+function calculateEndDate(range) {
+    const endDate = new Date();
+    return endDate;
+}
+
 function formatDateForAPI(date) {
     if (!isValidDate(date)) {
         throw new Error('Invalid date for API formatting');
@@ -305,7 +259,10 @@ function formatDateForAPI(date) {
     return `${year}-${month}-${day}`;
 }
 
-// Message Handling
+function isValidDate(date) {
+    return date instanceof Date && !isNaN(date);
+}
+
 function createMessageHandler(loadingFill, completionMessage, buttons, taskName, statusText, originalTaskName) {
     let totalChatsProcessed = 0;
     return function messageHandler(message) {
@@ -401,7 +358,6 @@ function resetTask(loadingFill, completionMessage, statusText) {
     loadingFill.style.transition = 'all 1.5s ease';
 }
 
-// ... [Previous code remains the same until resetUIState function]
 
 function resetUIState(buttons, taskName, statusText, loadingFill, originalTaskName) {
     if (buttons) {
@@ -459,7 +415,6 @@ chrome.runtime.onMessage.addListener((message) => {
     }
 });
 
-// Download Functions
 function handleDownloadClick() {
     const selectedChats = [...document.querySelectorAll('.chat-item input:checked')]
         .map(input => input.value);
@@ -497,11 +452,10 @@ async function startMessageDownload(selectedChats, dateRange) {
 
     updateUIForDownload(elements);
     
-    // Send the automation request with date range
+    // Send the automation request with only end date
     chrome.runtime.sendMessage({
         action: "startAutomation",
         selectedChats,
-        startDate: dateRange.startDate,
         endDate: dateRange.endDate,
         displayRange: dateRange.displayRange,
         includeMedia: false
