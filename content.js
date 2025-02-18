@@ -561,43 +561,126 @@ async function processDocument(button, chatTitle, index) {
 
 async function collectMessages(chatTitle) {
     await new Promise(resolve => setTimeout(resolve, 1000));
+    console.log('Starting message collection...');
     const messages = document.querySelectorAll('div.message-in, div.message-out');
+    console.log('Found messages:', messages.length);
     const uniqueMessages = new Set();
+    const processedMessages = [];
+    const getDateFromRelative = (text, time) => {
+        const [hours, minutes] = time.split(':').map(Number);
+        const today = new Date();
+        today.setHours(hours, minutes, 0, 0);      
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        text = text.toLowerCase().trim();
+        if (text === 'yesterday' || text === 'ieri') {
+            return yesterday;
+        } else if (text === 'today' || text === 'oggi') {
+            return today;
+        }
+        return null;
+    };
+    const weekdayToDate = (weekday, time) => {
+        const weekdays = {
+            'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+            'thursday': 4, 'friday': 5, 'saturday': 6,
+            'domenica': 0, 'lunedì': 1, 'martedì': 2, 'mercoledì': 3,
+            'giovedì': 4, 'venerdì': 5, 'sabato': 6
+        };
+        const today = new Date();
+        const [hours, minutes] = time.split(':').map(Number);
+        const targetWeekday = weekdays[weekday.toLowerCase()];
+        if (targetWeekday !== undefined) {
+            const diff = targetWeekday - today.getDay();
+            const targetDate = new Date(today);
+            targetDate.setDate(today.getDate() + diff);
+            targetDate.setHours(hours, minutes, 0, 0);
+            if (targetDate > today) {
+                targetDate.setDate(targetDate.getDate() - 7);
+            }
+            return targetDate;
+        }
+        return null;
+    };
+    const getMessageTimestamp = (dateInfo, time) => {
+        if (typeof dateInfo === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(dateInfo)) {
+            const [day, month, year] = dateInfo.split('/').map(Number);
+            const [hours, minutes] = time.split(':').map(Number);
+            return new Date(year, month - 1, day, hours, minutes).getTime();
+        } else if (dateInfo instanceof Date) {
+            return dateInfo.getTime();
+        }
+        return null;
+    };
     messages.forEach(msg => {
-        const text = msg.querySelector(SELECTORS.MESSAGE.text)?.textContent.trim();
-        const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim();
-        const type = msg.matches('div.message-out') ? 'out' : 'in';
-        if (text) {
-            const messageId = `${time}-${type}-${text.substring(0, 50)}`;
-            if (!uniqueMessages.has(messageId)) {
-                uniqueMessages.add(messageId);
+        const text = msg.querySelector('.selectable-text.copyable-text')?.textContent.trim();
+        const timeElement = msg.querySelector('.x3nfvp2.xxymvpz');      
+        if (text && timeElement) {
+            const timeText = timeElement.textContent.trim();
+            let dateInfo = null;
+            let currentElement = msg;
+            while (currentElement && !dateInfo) {
+                let sibling = currentElement.previousElementSibling;
+                while (sibling && !dateInfo) {
+                    const siblingText = sibling.textContent.trim();                    
+                    if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
+                        dateInfo = siblingText;
+                    } else if (/^(yesterday|ieri|today|oggi)$/i.test(siblingText)) {
+                        const date = getDateFromRelative(siblingText, timeText);
+                        if (date) dateInfo = date;
+                    } else if (/^(sunday|monday|tuesday|wednesday|thursday|friday|saturday|domenica|lunedì|martedì|mercoledì|giovedì|venerdì|sabato)$/i.test(siblingText)) {
+                        const date = weekdayToDate(siblingText, timeText);
+                        if (date) dateInfo = date;
+                    }
+                    sibling = sibling.previousElementSibling;
+                }
+                currentElement = currentElement.parentElement;
+            }
+            if (!dateInfo && timeElement.title) {
+                const titleMatch = timeElement.title.match(/(\d{2}\/\d{2}\/\d{4})/);
+                if (titleMatch) {
+                    dateInfo = titleMatch[1];
+                }
+            }         
+            const timestamp = getMessageTimestamp(dateInfo, timeText);
+            if (timestamp) {
+                const messageDate = new Date(timestamp).toLocaleDateString('en-GB');
+                const messageId = `${timeText}-${msg.matches('div.message-out') ? 'out' : 'in'}-${text.substring(0, 50)}`;
+                if (!uniqueMessages.has(messageId)) {
+                    uniqueMessages.add(messageId);
+                    processedMessages.push({
+                        text,
+                        time: timeText,
+                        date: messageDate,
+                        timestamp,
+                        type: msg.matches('div.message-out') ? 'out' : 'in',
+                        hasMedia: !!msg.querySelector('img[src^="blob:"], video[src^="blob:"], [data-icon="document"]')
+                    });
+                }
             }
         }
     });
+    console.log('Processed messages:', processedMessages.length);
+    processedMessages.sort((a, b) => a.timestamp - b.timestamp);
     let content = [
         '\n===========================================',
         `Chat Export: ${chatTitle.toUpperCase()}`,
-        `Date: ${new Date().toLocaleDateString('en-GB')}`,
-        `Messages: ${uniqueMessages.size}`,
+        `Messages: ${processedMessages.length}`,
+        `Date Range: ${processedMessages[0]?.date || 'N/A'} - ${processedMessages[processedMessages.length-1]?.date || 'N/A'}`,
         '===========================================\n\n'
     ].join('\n');
-    messages.forEach(msg => {
-        const text = msg.querySelector(SELECTORS.MESSAGE.text);
-        const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim() || '';
-        if (text) {
-            const messageText = text.textContent.trim();
-            const messageId = `${time}-${msg.matches('div.message-out') ? 'out' : 'in'}-${messageText.substring(0, 50)}`;
-            if (uniqueMessages.has(messageId)) {
-                content += [
-                    `[${new Date().toLocaleDateString('en-GB')} ${time}] ${msg.matches('div.message-out') ? 'Me' : chatTitle}:`,
-                    `>>> ${messageText}`,
-                    msg.querySelector('img[src^="blob:"], video[src^="blob:"], [data-icon="document"]') ? '[Contains media]\n' : '',
-                    '-------------------------------------------\n\n'
-                ].join('\n');
-            }
-        }
+    processedMessages.forEach(msg => {
+        content += [
+            `[${msg.date} ${msg.time}] ${msg.type === 'out' ? 'Me' : chatTitle}:`,
+            `>>> ${msg.text}`,
+            msg.hasMedia ? '[Contains media]\n' : '',
+            '-------------------------------------------\n\n'
+        ].join('\n');
     });
-    return { content, count: uniqueMessages.size };
+    return {
+        content,
+        count: processedMessages.length
+    };
 }
 
 log('Content script loaded');
