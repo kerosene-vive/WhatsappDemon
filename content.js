@@ -562,16 +562,24 @@ async function processDocument(button, chatTitle, index) {
 async function collectMessages(chatTitle) {
     await new Promise(resolve => setTimeout(resolve, 1000));
     console.log('Starting message collection...');
-
-    // Get all messages using the working selector
     const messages = document.querySelectorAll('div.message-in, div.message-out');
     console.log('Found messages:', messages.length);
-    
-    // Track unique messages
     const uniqueMessages = new Set();
     const processedMessages = [];
-
-    // Helper to convert weekday to date
+    const getDateFromRelative = (text, time) => {
+        const [hours, minutes] = time.split(':').map(Number);
+        const today = new Date();
+        today.setHours(hours, minutes, 0, 0);      
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        text = text.toLowerCase().trim();
+        if (text === 'yesterday' || text === 'ieri') {
+            return yesterday;
+        } else if (text === 'today' || text === 'oggi') {
+            return today;
+        }
+        return null;
+    };
     const weekdayToDate = (weekday, time) => {
         const weekdays = {
             'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
@@ -579,84 +587,65 @@ async function collectMessages(chatTitle) {
             'domenica': 0, 'lunedì': 1, 'martedì': 2, 'mercoledì': 3,
             'giovedì': 4, 'venerdì': 5, 'sabato': 6
         };
-        
         const today = new Date();
         const [hours, minutes] = time.split(':').map(Number);
         const targetWeekday = weekdays[weekday.toLowerCase()];
-        
         if (targetWeekday !== undefined) {
             const diff = targetWeekday - today.getDay();
             const targetDate = new Date(today);
             targetDate.setDate(today.getDate() + diff);
             targetDate.setHours(hours, minutes, 0, 0);
-            
-            // If the resulting date is in the future, subtract a week
             if (targetDate > today) {
                 targetDate.setDate(targetDate.getDate() - 7);
             }
-            
             return targetDate;
         }
         return null;
     };
-
-    // Helper to convert date and time to timestamp
     const getMessageTimestamp = (dateInfo, time) => {
         if (typeof dateInfo === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(dateInfo)) {
-            // Regular date format
             const [day, month, year] = dateInfo.split('/').map(Number);
             const [hours, minutes] = time.split(':').map(Number);
             return new Date(year, month - 1, day, hours, minutes).getTime();
         } else if (dateInfo instanceof Date) {
-            // Already a Date object (from weekday conversion)
             return dateInfo.getTime();
         }
         return null;
     };
-
-    // First pass - collect unique messages with their data
     messages.forEach(msg => {
         const text = msg.querySelector('.selectable-text.copyable-text')?.textContent.trim();
-        const timeElement = msg.querySelector('.x3nfvp2.xxymvpz');
-        
+        const timeElement = msg.querySelector('.x3nfvp2.xxymvpz');      
         if (text && timeElement) {
             const timeText = timeElement.textContent.trim();
             let dateInfo = null;
-            
-            // Look for date or weekday by traversing up and checking previous siblings
             let currentElement = msg;
             while (currentElement && !dateInfo) {
                 let sibling = currentElement.previousElementSibling;
                 while (sibling && !dateInfo) {
-                    const siblingText = sibling.textContent.trim();
-                    
+                    const siblingText = sibling.textContent.trim();                    
                     if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
-                        // Regular date format
                         dateInfo = siblingText;
+                    } else if (/^(yesterday|ieri|today|oggi)$/i.test(siblingText)) {
+                        const date = getDateFromRelative(siblingText, timeText);
+                        if (date) dateInfo = date;
                     } else if (/^(sunday|monday|tuesday|wednesday|thursday|friday|saturday|domenica|lunedì|martedì|mercoledì|giovedì|venerdì|sabato)$/i.test(siblingText)) {
-                        // Weekday format
                         const date = weekdayToDate(siblingText, timeText);
                         if (date) dateInfo = date;
                     }
-                    
                     sibling = sibling.previousElementSibling;
                 }
                 currentElement = currentElement.parentElement;
             }
-            
-            // If no date found, check timeElement's title
             if (!dateInfo && timeElement.title) {
                 const titleMatch = timeElement.title.match(/(\d{2}\/\d{2}\/\d{4})/);
                 if (titleMatch) {
                     dateInfo = titleMatch[1];
                 }
-            }
-            
+            }         
             const timestamp = getMessageTimestamp(dateInfo, timeText);
             if (timestamp) {
                 const messageDate = new Date(timestamp).toLocaleDateString('en-GB');
                 const messageId = `${timeText}-${msg.matches('div.message-out') ? 'out' : 'in'}-${text.substring(0, 50)}`;
-                
                 if (!uniqueMessages.has(messageId)) {
                     uniqueMessages.add(messageId);
                     processedMessages.push({
@@ -671,13 +660,8 @@ async function collectMessages(chatTitle) {
             }
         }
     });
-
     console.log('Processed messages:', processedMessages.length);
-
-    // Sort messages by actual timestamp
     processedMessages.sort((a, b) => a.timestamp - b.timestamp);
-
-    // Format output
     let content = [
         '\n===========================================',
         `Chat Export: ${chatTitle.toUpperCase()}`,
@@ -685,8 +669,6 @@ async function collectMessages(chatTitle) {
         `Date Range: ${processedMessages[0]?.date || 'N/A'} - ${processedMessages[processedMessages.length-1]?.date || 'N/A'}`,
         '===========================================\n\n'
     ].join('\n');
-
-    // Add all messages in chronological order
     processedMessages.forEach(msg => {
         content += [
             `[${msg.date} ${msg.time}] ${msg.type === 'out' ? 'Me' : chatTitle}:`,
@@ -695,7 +677,6 @@ async function collectMessages(chatTitle) {
             '-------------------------------------------\n\n'
         ].join('\n');
     });
-
     return {
         content,
         count: processedMessages.length
