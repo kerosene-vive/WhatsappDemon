@@ -561,207 +561,145 @@ async function processDocument(button, chatTitle, index) {
 
 async function collectMessages(chatTitle) {
     await new Promise(resolve => setTimeout(resolve, 1000));
+    console.log('Starting message collection...');
+
+    // Get all messages using the working selector
+    const messages = document.querySelectorAll('div.message-in, div.message-out');
+    console.log('Found messages:', messages.length);
     
-    // Debugging: Log all found message selectors
-    console.log('Message Containers:', document.querySelectorAll('div.message-in, div.message-out').length);
-    console.log('Alternative Message Selectors:', 
-        document.querySelectorAll('div[role="row"][data-testid="msg-container"]').length,
-        document.querySelectorAll('div[data-testid="chat-msg-container"]').length
-    );
-
-    // Try multiple message selectors
-    const messageSelectors = [
-        'div.message-in, div.message-out',
-        'div[role="row"][data-testid="msg-container"]',
-        'div[data-testid="chat-msg-container"]'
-    ];
-
-    let messages = [];
-    for (const selector of messageSelectors) {
-        const foundMessages = document.querySelectorAll(selector);
-        if (foundMessages.length > 0) {
-            messages = Array.from(foundMessages);
-            break;
-        }
-    }
-
-    console.log('Found Messages:', messages.length);
-    
+    // Track unique messages
     const uniqueMessages = new Set();
-    let availableDates = [];
+    const processedMessages = [];
 
-    // Reliable date extraction strategy
-    const extractChatDates = () => {
-        // Function to check if a text looks like a valid date
-        const isValidDate = (text) => {
-            const dateRegex = /^\d{2}\/\d{2}\/\d{4}$/;
-            return dateRegex.test(text);
+    // Helper to convert weekday to date
+    const weekdayToDate = (weekday, time) => {
+        const weekdays = {
+            'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+            'thursday': 4, 'friday': 5, 'saturday': 6,
+            'domenica': 0, 'lunedì': 1, 'martedì': 2, 'mercoledì': 3,
+            'giovedì': 4, 'venerdì': 5, 'sabato': 6
         };
-
-        // Collect all text content from the chat
-        const allTextNodes = [];
-        const walkDOM = (node) => {
-            if (node.nodeType === Node.TEXT_NODE) {
-                const text = node.textContent.trim();
-                if (text) allTextNodes.push(text);
+        
+        const today = new Date();
+        const [hours, minutes] = time.split(':').map(Number);
+        const targetWeekday = weekdays[weekday.toLowerCase()];
+        
+        if (targetWeekday !== undefined) {
+            const diff = targetWeekday - today.getDay();
+            const targetDate = new Date(today);
+            targetDate.setDate(today.getDate() + diff);
+            targetDate.setHours(hours, minutes, 0, 0);
+            
+            // If the resulting date is in the future, subtract a week
+            if (targetDate > today) {
+                targetDate.setDate(targetDate.getDate() - 7);
             }
-            for (let i = 0; i < node.childNodes.length; i++) {
-                walkDOM(node.childNodes[i]);
-            }
-        };
-        walkDOM(document.body);
-
-        // Filter and collect unique dates
-        const uniqueDates = new Set(
-            allTextNodes
-                .filter(isValidDate)
-        );
-
-        console.log('Found Dates:', Array.from(uniqueDates));
-
-        // Sort dates if multiple found
-        const dates = Array.from(uniqueDates).sort((a, b) => {
-            const [da, ma, ya] = a.split('/').map(Number);
-            const [db, mb, yb] = b.split('/').map(Number);
-            const dateA = new Date(ya, ma - 1, da);
-            const dateB = new Date(yb, mb - 1, db);
-            return dateB.getTime() - dateA.getTime();
-        });
-
-        availableDates = dates;
-        return dates.length > 0 ? dates[0] : new Date().toLocaleDateString('en-GB');
+            
+            return targetDate;
+        }
+        return null;
     };
 
-    // Extract chat dates
-    const defaultChatDate = extractChatDates();
-
-    // Modified date assignment strategy
-    const getMessageDate = (msg, index, fallbackDate) => {
-        // Method 1: Find nearest date before/after message
-        const dateNearMessage = availableDates.find((date, i) => {
-            const prevDate = i > 0 ? availableDates[i-1] : null;
-            if (prevDate) {
-                // Check if this message's index is proportionally between the two dates
-                const proportionalIndex = Math.floor(
-                    (index / messages.length) * (availableDates.length - 1)
-                );
-                return availableDates[proportionalIndex] === date;
-            }
-            return false;
-        });
-
-        return dateNearMessage || fallbackDate;
+    // Helper to convert date and time to timestamp
+    const getMessageTimestamp = (dateInfo, time) => {
+        if (typeof dateInfo === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(dateInfo)) {
+            // Regular date format
+            const [day, month, year] = dateInfo.split('/').map(Number);
+            const [hours, minutes] = time.split(':').map(Number);
+            return new Date(year, month - 1, day, hours, minutes).getTime();
+        } else if (dateInfo instanceof Date) {
+            // Already a Date object (from weekday conversion)
+            return dateInfo.getTime();
+        }
+        return null;
     };
 
-    // Collect unique messages
-    const messageTextSelectors = [
-        '[data-testid="tail-container"] span',
-        '.selectable-text.copyable-text',
-        'span[dir="auto"]'
-    ];
-
-    const messageTimeSelectors = [
-        '[data-testid="primary-detail"] span',
-        '.x3nfvp2.xxymvpz',
-        'span[data-testid="msg-time"]'
-    ];
-
-    messages.forEach((msg, index) => {
-        let text, time;
+    // First pass - collect unique messages with their data
+    messages.forEach(msg => {
+        const text = msg.querySelector('.selectable-text.copyable-text')?.textContent.trim();
+        const timeElement = msg.querySelector('.x3nfvp2.xxymvpz');
         
-        // Try multiple text selectors
-        for (const selector of messageTextSelectors) {
-            const textEl = msg.querySelector(selector);
-            if (textEl) {
-                text = textEl.textContent.trim();
-                break;
+        if (text && timeElement) {
+            const timeText = timeElement.textContent.trim();
+            let dateInfo = null;
+            
+            // Look for date or weekday by traversing up and checking previous siblings
+            let currentElement = msg;
+            while (currentElement && !dateInfo) {
+                let sibling = currentElement.previousElementSibling;
+                while (sibling && !dateInfo) {
+                    const siblingText = sibling.textContent.trim();
+                    
+                    if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
+                        // Regular date format
+                        dateInfo = siblingText;
+                    } else if (/^(sunday|monday|tuesday|wednesday|thursday|friday|saturday|domenica|lunedì|martedì|mercoledì|giovedì|venerdì|sabato)$/i.test(siblingText)) {
+                        // Weekday format
+                        const date = weekdayToDate(siblingText, timeText);
+                        if (date) dateInfo = date;
+                    }
+                    
+                    sibling = sibling.previousElementSibling;
+                }
+                currentElement = currentElement.parentElement;
             }
-        }
-
-        // Try multiple time selectors
-        for (const selector of messageTimeSelectors) {
-            const timeEl = msg.querySelector(selector);
-            if (timeEl) {
-                time = timeEl.textContent.trim();
-                break;
+            
+            // If no date found, check timeElement's title
+            if (!dateInfo && timeElement.title) {
+                const titleMatch = timeElement.title.match(/(\d{2}\/\d{2}\/\d{4})/);
+                if (titleMatch) {
+                    dateInfo = titleMatch[1];
+                }
             }
-        }
-
-        const type = msg.matches && msg.matches('.message-out') ? 'out' : 'in';
-        
-        if (text) {
-            const messageId = `${time}-${type}-${text.substring(0, 50)}`;
-            if (!uniqueMessages.has(messageId)) {
-                uniqueMessages.add(messageId);
+            
+            const timestamp = getMessageTimestamp(dateInfo, timeText);
+            if (timestamp) {
+                const messageDate = new Date(timestamp).toLocaleDateString('en-GB');
+                const messageId = `${timeText}-${msg.matches('div.message-out') ? 'out' : 'in'}-${text.substring(0, 50)}`;
+                
+                if (!uniqueMessages.has(messageId)) {
+                    uniqueMessages.add(messageId);
+                    processedMessages.push({
+                        text,
+                        time: timeText,
+                        date: messageDate,
+                        timestamp,
+                        type: msg.matches('div.message-out') ? 'out' : 'in',
+                        hasMedia: !!msg.querySelector('img[src^="blob:"], video[src^="blob:"], [data-icon="document"]')
+                    });
+                }
             }
         }
     });
-    
-    // Create content with export details
+
+    console.log('Processed messages:', processedMessages.length);
+
+    // Sort messages by actual timestamp
+    processedMessages.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Format output
     let content = [
         '\n===========================================',
         `Chat Export: ${chatTitle.toUpperCase()}`,
-        `Default Chat Date: ${defaultChatDate}`,
-        `Messages: ${uniqueMessages.size}`,
+        `Messages: ${processedMessages.length}`,
+        `Date Range: ${processedMessages[0]?.date || 'N/A'} - ${processedMessages[processedMessages.length-1]?.date || 'N/A'}`,
         '===========================================\n\n'
     ].join('\n');
-    
-    // Process and format each message
-    const sortedMessages = messages.sort((a, b) => {
-        let timeA = '', timeB = '';
-        
-        for (const selector of messageTimeSelectors) {
-            const elA = a.querySelector(selector);
-            const elB = b.querySelector(selector);
-            if (elA) timeA = elA.textContent.trim();
-            if (elB) timeB = elB.textContent.trim();
-            if (timeA || timeB) break;
-        }
-        
-        return timeA.localeCompare(timeB);
+
+    // Add all messages in chronological order
+    processedMessages.forEach(msg => {
+        content += [
+            `[${msg.date} ${msg.time}] ${msg.type === 'out' ? 'Me' : chatTitle}:`,
+            `>>> ${msg.text}`,
+            msg.hasMedia ? '[Contains media]\n' : '',
+            '-------------------------------------------\n\n'
+        ].join('\n');
     });
 
-    sortedMessages.forEach((msg, index) => {
-        let text, time;
-        
-        // Try multiple text selectors
-        for (const selector of messageTextSelectors) {
-            const textEl = msg.querySelector(selector);
-            if (textEl) {
-                text = textEl.textContent.trim();
-                break;
-            }
-        }
-
-        // Try multiple time selectors
-        for (const selector of messageTimeSelectors) {
-            const timeEl = msg.querySelector(selector);
-            if (timeEl) {
-                time = timeEl.textContent.trim();
-                break;
-            }
-        }
-        
-        if (text) {
-            const messageId = `${time}-${msg.matches && msg.matches('.message-out') ? 'out' : 'in'}-${text.substring(0, 50)}`;
-            
-            if (uniqueMessages.has(messageId)) {
-                // Dynamically assign date based on message index
-                const messageDate = getMessageDate(msg, index, defaultChatDate);
-                
-                content += [
-                    `[${messageDate} ${time}] ${msg.matches && msg.matches('.message-out') ? 'Me' : chatTitle}:`,
-                    `>>> ${text}`,
-                    msg.querySelector('img[src^="blob:"], video[src^="blob:"], [data-icon="document"]') ? '[Contains media]\n' : '',
-                    '-------------------------------------------\n\n'
-                ].join('\n');
-            }
-        }
-    });
-
-    console.log('Final Unique Messages:', uniqueMessages.size);
-
-    return { content, count: uniqueMessages.size };
+    return {
+        content,
+        count: processedMessages.length
+    };
 }
 
 log('Content script loaded');
