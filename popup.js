@@ -244,10 +244,40 @@ function getLastDayOfMonth(year, month) {
 }
 
 function calculateEndDate(range) {
-    const endDate = new Date();
+    const currentDate = new Date();
+    let endDate = new Date();
+    
+    switch (range) {
+        case 'week':
+            // Set date to 7 days ago
+            endDate.setDate(currentDate.getDate() - 7);
+            break;
+        case 'month':
+            // Set date to 1 month ago
+            endDate.setMonth(currentDate.getMonth() - 1);
+            break;
+        case 'year':
+            // Set date to 1 year ago
+            endDate.setFullYear(currentDate.getFullYear() - 1);
+            break;
+        default:
+            throw new Error('Invalid date range selected');
+    }
+    
+    // Ensure the date is valid
+    if (!isValidDate(endDate)) {
+        throw new Error('Invalid date calculated');
+    }
+    
     return endDate;
 }
 
+// Helper function to check if date is valid
+function isValidDate(date) {
+    return date instanceof Date && !isNaN(date);
+}
+
+// Helper function to format date for API
 function formatDateForAPI(date) {
     if (!isValidDate(date)) {
         throw new Error('Invalid date for API formatting');
@@ -257,10 +287,6 @@ function formatDateForAPI(date) {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
-}
-
-function isValidDate(date) {
-    return date instanceof Date && !isNaN(date);
 }
 
 function createMessageHandler(loadingFill, completionMessage, buttons, taskName, statusText, originalTaskName) {
