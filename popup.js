@@ -103,12 +103,12 @@ function createDateSelectionUI() {
     
     dateSelection.innerHTML = `
         <div class="date-selection-content">
-            <h3>Select Time Range</h3>
+            <h3>Time Range</h3>
             <div class="range-selection">
                 <select id="timeRange" class="time-range-select">
-                    <option value="week">Last Week</option>
-                    <option value="month">Last Month</option>
-                    <option value="year">Last Year</option>
+                    <option value="week">1  Week</option>
+                    <option value="month">1  Month</option>
+                    <option value="year">1  Year</option>
                 </select>
             </div>
             <div class="date-actions">
