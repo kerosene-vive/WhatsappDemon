@@ -229,7 +229,6 @@ async function forwardMessage(request, sender) {
     try {
         if (request.action === "exportProgress" && request.stats?.dateRange) {
             request.stats.dateRange = {
-                start: new Date(request.stats.dateRange.start).toLocaleDateString(),
                 end: new Date(request.stats.dateRange.end).toLocaleDateString()
             };
         }
@@ -278,11 +277,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             case "startAutomation":
                 if (whatsappTabId) {
                     startFocusInterval();
-                    // Forward the date range to content script
                     chrome.tabs.sendMessage(whatsappTabId, {
                         action: 'startAutomation',
                         selectedChats: request.selectedChats,
-                        startDate: request.startDate,
                         endDate: request.endDate,
                         includeMedia: request.includeMedia
                     })

@@ -216,7 +216,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 return true;
             }
             processingAutomation = true;
-            automateWhatsAppExport(request.selectedChats)
+            endDate = new Date(request.endDate);
+            automateWhatsAppExport(request.selectedChats, endDate)
                 .finally(() => processingAutomation = false);
             sendResponse({ status: 'automation started' });
             break;
@@ -260,7 +261,7 @@ async function initialize() {
     }
 }
 
-async function automateWhatsAppExport(selectedChats) {
+async function automateWhatsAppExport(selectedChats, endDate) {
     try {
         for (let chatTitle of selectedChats) {
             const chat = availableChats.find(c => c.title === chatTitle);
@@ -272,7 +273,7 @@ async function automateWhatsAppExport(selectedChats) {
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(chat.clickableElement);
             await waitForElement(SELECTORS.CHAT.messageContainer);
-            const result = await extractChatContentAndMedia(chatTitle);
+            const result = await extractChatContentAndMedia(chatTitle,endDate);
             chrome.runtime.sendMessage({ 
                 action: "exportProgress",
                 progress: Math.round((selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100),
@@ -296,11 +297,11 @@ async function automateWhatsAppExport(selectedChats) {
     }
 }
 
-async function extractChatContentAndMedia(chatTitle) {
+async function extractChatContentAndMedia(chatTitle, endDate) {
     try {
-        await scrollChatToTop();
+        await scrollChatToTop(endDate);
         const [mediaContent, messages] = await Promise.all([
-            collectAllMedia(chatTitle),
+            collectAllMedia(chatTitle, endDate),
             collectMessages(chatTitle)
         ]);
         const messagesBlob = new Blob([messages.content], { type: 'text/plain' });
@@ -325,23 +326,65 @@ async function extractChatContentAndMedia(chatTitle) {
     }
 }
 
-async function scrollChatToTop() {
+async function scrollChatToTop(endDate) {
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
     if (!container) return;
+    
     let lastCount = 0;
     let unchanged = 0;
+    const targetDate = new Date(endDate);
+    console.log('Starting scroll with target end date:', targetDate.toISOString());
+    
     for (let i = 0; i < 30 && unchanged < 3; i++) {
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+        if (messages.length === 0) continue;
+        
+        // Look for date headers
+        let currentElement = messages[0];
+        let dateFound = false;
+        
+        while (currentElement && !dateFound) {
+            let sibling = currentElement.previousElementSibling;
+            while (sibling && !dateFound) {
+                const siblingText = sibling.textContent.trim();
+                
+                // Check for date in DD/MM/YYYY format
+                if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
+                    console.log('Found date header:', siblingText);
+                    const [day, month, year] = siblingText.split('/').map(Number);
+                    const messageDate = new Date(year, month - 1, day);
+                    console.log('Parsed message date:', messageDate.toISOString());
+                    console.log('Target date:', targetDate.toISOString());
+                    
+                    // Stop scrolling if we've reached a message older than the target date
+                    if (messageDate < targetDate) {
+                        console.log('Found message older than target date, stopping scroll');
+                        return;
+                    }
+                    dateFound = true;
+                }
+                sibling = sibling.previousElementSibling;
+            }
+            currentElement = currentElement.parentElement;
+        }
+        
+        // Scroll logic
         messages[0]?.scrollIntoView({ behavior: "auto", block: "center" });
         container.scrollTop -= 10000;
         await new Promise(resolve => setTimeout(resolve, 400));
+        
         const currentCount = messages.length;
-        if (currentCount === lastCount) unchanged++;
-        else {
+        if (currentCount === lastCount) {
+            unchanged++;
+            console.log(`Unchanged count: ${unchanged}, current messages: ${currentCount}`);
+        } else {
             unchanged = 0;
             lastCount = currentCount;
+            console.log(`New messages found, total count: ${currentCount}`);
         }
     }
+    
+    console.log('Reached max iterations or unchanged limit without finding target date');
     await new Promise(resolve => setTimeout(resolve, 1000));
 }
 
@@ -504,13 +547,13 @@ async function scrollAndCollectMedia(type) {
     return Array.from(type === 'documents' ? mediaItems.values() : mediaItems.keys());
 }
 
-async function collectAllMedia(chatTitle) {
+async function collectAllMedia(chatTitle,endDate) {
     const mediaContent = {
         images: [], videos: [],
         documents: new Set(),
         links: new Set()
     };
-    await scrollChatToTop();
+    await scrollChatToTop(endDate);
     for (const type of Object.keys(mediaContent)) {
         try {
             const items = await scrollAndCollectMedia(type);

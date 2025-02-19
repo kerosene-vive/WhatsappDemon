@@ -298,23 +298,27 @@ body {
   100% { transform: translate(-50%, -50%) rotate(360deg); }
 }
 /* Add these styles to your existing popup.css */
+
+
+.date-selection.show {
+  display: flex;
+}
+
+/* Update these styles */
 .date-selection {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  right: 0;  /* Add right: 0 to ensure full width */
+  bottom: 0; /* Add bottom: 0 to ensure full height */
+  width: 100vw; /* Use viewport width instead of just 100% */
+  height: 100vh;
   background: var(--bg-light);
   z-index: 9999;
   display: none;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-}
-
-.date-selection.show {
-  display: flex;
 }
 
 .date-selection-content {
@@ -324,6 +328,10 @@ body {
   width: 90%;
   max-width: 300px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin: 0 auto; /* Add this to help with centering */
+  position: relative; /* Add this to ensure proper stacking */
+  left: 0; /* Reset any potential offset */
+  transform: none; /* Reset any potential transform */
 }
 
 .date-selection h3 {
@@ -438,4 +446,44 @@ body {
 .confirm-dates:disabled {
   background-color: #cccccc;
   cursor: not-allowed;
+}
+
+select {
+  width: 100%;
+  padding: 14px 20px;
+  border: 2px solid var(--primary);
+  border-radius: 25px;
+  font-size: 16px;
+  color: var(--primary);
+  background-color: white;
+  margin-bottom: 20px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23075e54' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  background-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Inter', sans-serif;
+  font-weight: 800;  /* Increased to extra bold */
+}
+
+select:hover {
+  border-color: var(--primary-hover);
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(7, 94, 84, 0.1);
+}
+
+/* Matching title style */
+.date-selection h3,
+.date-selection-content h3 {
+  color: var(--primary);
+  font-size: 20px;
+  margin: 0 0 24px 0;
+  text-align: center;
+  font-weight: 800;  /* Extra bold to match */
 }
