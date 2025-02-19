@@ -305,11 +305,11 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             collectMessages(chatTitle)
         ]);
         const messagesBlob = new Blob([messages.content], { type: 'text/plain' });
-        await downloadMedia(messagesBlob, `${chatTitle}/${chatTitle}.txt`);
+        await downloadMedia(messagesBlob, `${chatTitle}/chat.txt`);
         if (mediaContent.links.size > 0) {
             const linksContent = Array.from(mediaContent.links).join('\n\n---\n\n');
             const linksBlob = new Blob([linksContent], { type: 'text/plain' });
-            await downloadMedia(linksBlob, `${chatTitle}/${chatTitle}-links.txt`);
+            await downloadMedia(linksBlob, `${chatTitle}/links.txt`);
         }
         return {
             success: true,
