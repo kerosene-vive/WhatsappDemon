@@ -329,63 +329,52 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
 async function scrollChatToTop(endDate) {
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
     if (!container) return;
-    
-    let lastCount = 0;
-    let unchanged = 0;
+
     const targetDate = new Date(endDate);
-    console.log('Starting scroll with target end date:', targetDate.toISOString());
-    
-    for (let i = 0; i < 30 && unchanged < 3; i++) {
+
+    let prevMessageCount = 0;
+    let unchangedIterations = 0;
+
+    while (unchangedIterations < 3) {
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
-        if (messages.length === 0) continue;
-        
-        // Look for date headers
-        let currentElement = messages[0];
-        let dateFound = false;
-        
-        while (currentElement && !dateFound) {
-            let sibling = currentElement.previousElementSibling;
-            while (sibling && !dateFound) {
-                const siblingText = sibling.textContent.trim();
-                
-                // Check for date in DD/MM/YYYY format
-                if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
-                    console.log('Found date header:', siblingText);
-                    const [day, month, year] = siblingText.split('/').map(Number);
-                    const messageDate = new Date(year, month - 1, day);
-                    console.log('Parsed message date:', messageDate.toISOString());
-                    console.log('Target date:', targetDate.toISOString());
-                    
-                    // Stop scrolling if we've reached a message older than the target date
-                    if (messageDate < targetDate) {
-                        console.log('Found message older than target date, stopping scroll');
-                        return;
-                    }
-                    dateFound = true;
-                }
-                sibling = sibling.previousElementSibling;
-            }
-            currentElement = currentElement.parentElement;
-        }
-        
-        // Scroll logic
-        messages[0]?.scrollIntoView({ behavior: "auto", block: "center" });
-        container.scrollTop -= 10000;
-        await new Promise(resolve => setTimeout(resolve, 400));
-        
-        const currentCount = messages.length;
-        if (currentCount === lastCount) {
-            unchanged++;
-            console.log(`Unchanged count: ${unchanged}, current messages: ${currentCount}`);
+        const currentMessageCount = messages.length;
+
+        if (currentMessageCount === prevMessageCount) {
+            unchangedIterations++;
         } else {
-            unchanged = 0;
-            lastCount = currentCount;
-            console.log(`New messages found, total count: ${currentCount}`);
+            unchangedIterations = 0;
+            prevMessageCount = currentMessageCount;
+        }
+
+        // Check if we've reached a message older than the target date
+        const oldestMessage = messages[0];
+        if (oldestMessage) {
+            const messageDate = await getMessageDate(oldestMessage);
+            if (messageDate && messageDate < targetDate) {
+                break;
+            }
+        }
+
+        // Scroll to the oldest loaded message
+        oldestMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // Scroll up by an additional amount to load more messages
+        container.scrollTop -= 1000;
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+}
+
+async function getMessageDate(message) {
+    const dateElement = message.previousElementSibling;
+    if (dateElement && dateElement.matches(SELECTORS.MESSAGE.dateHeader)) {
+        const dateText = dateElement.textContent.trim();
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateText)) {
+            const [day, month, year] = dateText.split('/').map(Number);
+            return new Date(year, month - 1, day);
         }
     }
-    
-    console.log('Reached max iterations or unchanged limit without finding target date');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    return null;
 }
 
 function processMessages(messages, chatTitle, mediaContent) {
