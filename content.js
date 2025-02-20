@@ -330,10 +330,9 @@ async function scrollChatToTop(endDate) {
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
     if (!container) return;
 
-    const targetDate = new Date(endDate);
-
     let prevMessageCount = 0;
     let unchangedIterations = 0;
+    const targetDate = new Date(endDate);
 
     while (unchangedIterations < 3) {
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
@@ -346,17 +345,31 @@ async function scrollChatToTop(endDate) {
             prevMessageCount = currentMessageCount;
         }
 
-        // Check if we've reached a message older than the target date
-        const oldestMessage = messages[0];
-        if (oldestMessage) {
-            const messageDate = await getMessageDate(oldestMessage);
-            if (messageDate && messageDate < targetDate) {
-                break;
+        // Look for date headers
+        let currentElement = messages[0];
+        let dateFound = false;
+
+        while (currentElement && !dateFound) {
+            let sibling = currentElement.previousElementSibling;
+            while (sibling && !dateFound) {
+                const siblingText = sibling.textContent.trim();
+
+                // Check for date in DD/MM/YYYY format
+                if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
+                    const [day, month, year] = siblingText.split('/').map(Number);
+                    const messageDate = new Date(year, month - 1, day);
+                    if (messageDate < targetDate) {
+                        return;
+                    }
+                    dateFound = true;
+                }
+                sibling = sibling.previousElementSibling;
             }
+            currentElement = currentElement.parentElement;
         }
 
         // Scroll to the oldest loaded message
-        oldestMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
 
         // Scroll up by an additional amount to load more messages
         container.scrollTop -= 1000;
