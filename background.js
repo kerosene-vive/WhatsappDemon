@@ -249,7 +249,8 @@ async function handleDownload(request) {
         await chrome.downloads.download({
             url: request.data.url,
             filename: request.data.filename,
-            saveAs: false
+            // New line: Allow save dialog for HTML files
+            saveAs: request.data.type === 'text/html' ? true : false
         });
     } catch (error) {
         log(`Download error: ${error.message}`);

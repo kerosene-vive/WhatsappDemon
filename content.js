@@ -299,29 +299,90 @@ async function automateWhatsAppExport(selectedChats, endDate) {
 
 async function extractChatContentAndMedia(chatTitle, endDate) {
     try {
+        // Ensure we've scrolled to the full chat history
         await scrollChatToTop(endDate);
-        const [mediaContent, messages] = await Promise.all([
-            collectAllMedia(chatTitle, endDate),
-            collectMessages(chatTitle)
-        ]);
-        const messagesBlob = new Blob([messages.content], { type: 'text/plain' });
-        await downloadMedia(messagesBlob, `${chatTitle}/chat.txt`);
-        if (mediaContent.links.size > 0) {
-            const linksContent = Array.from(mediaContent.links).join('\n\n---\n\n');
-            const linksBlob = new Blob([linksContent], { type: 'text/plain' });
-            await downloadMedia(linksBlob, `${chatTitle}/links.txt`);
-        }
+        
+        // Capture entire WhatsApp Web structure
+        const messagesContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
+        
+        // Capture all styles, with a focus on scroll and layout
+        const capturedStyles = Array.from(document.styleSheets)
+            .map(sheet => {
+                try {
+                    return Array.from(sheet.cssRules)
+                        .map(rule => rule.cssText)
+                        .join('\n');
+                } catch(e) {
+                    return '';
+                }
+            })
+            .join('\n');
+
+        // Generate full HTML package with enhanced scrolling
+        const fullPageHTML = `<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>WhatsApp Time Capsule - ${chatTitle}</title>
+            <style>
+                /* Captured WhatsApp Web Styles */
+                ${capturedStyles}
+                
+                /* Enhanced Scroll Preservation */
+                body, html {
+                    margin: 0;
+                    padding: 0;
+                    height: 100%;
+                    overflow: hidden;
+                }
+                #time-capsule-container {
+                    height: 100vh;
+                    overflow-y: auto;
+                    position: relative;
+                }
+                #time-capsule-container > div {
+                    height: 100%;
+                    overflow-y: auto;
+                }
+            </style>
+        </head>
+        <body>
+            <div id="time-capsule-container">
+                ${messagesContainer.outerHTML}
+            </div>
+            <script>
+                // Preserve original WhatsApp scrolling behavior
+                window.onload = function() {
+                    const container = document.querySelector('${SELECTORS.CHAT.scrollContainer}');
+                    if (container) {
+                        // Scroll to bottom initially
+                        container.scrollTop = container.scrollHeight;
+                        
+                        // Prevent zooming on mobile
+                        document.addEventListener('gesturestart', function (e) {
+                            e.preventDefault();
+                        });
+                    }
+                }
+            </script>
+        </body>
+        </html>`;
+
+        // Create blob for HTML
+        const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
+        
+        // Download HTML file
+        await downloadMedia(htmlBlob, `${chatTitle}_WhatsApp_TimeCapsule.html`);
+
         return {
             success: true,
             mediaContent: {
-                images: mediaContent.images.length,
-                videos: mediaContent.videos.length,
-                documents: mediaContent.documents.size,
-                links: mediaContent.links.size
+                htmlExport: true
             },
-            totalMessages: messages.count
+            totalMessages: document.querySelectorAll('div.message-in, div.message-out').length
         };
     } catch (error) {
+        log(`Export error: ${error.message}`);
         throw error;
     }
 }
