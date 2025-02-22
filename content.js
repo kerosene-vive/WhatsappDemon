@@ -302,10 +302,58 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         // Ensure we've scrolled to the full chat history
         await scrollChatToTop(endDate);
         
-        // Capture entire WhatsApp Web structure
+        // Capture messages container
         const messagesContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
         
-        // Capture all styles, with a focus on scroll and layout
+        // Function to convert image to base64
+        async function convertImageToBase64(imageElement) {
+            try {
+                const response = await fetch(imageElement.src);
+                const blob = await response.blob();
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        // Create a new image element with the base64 src
+                        const newImg = document.createElement('img');
+                        newImg.src = reader.result;
+                        // Copy all original attributes
+                        for (let attr of imageElement.attributes) {
+                            if (attr.name !== 'src') {
+                                newImg.setAttribute(attr.name, attr.value);
+                            }
+                        }
+                        resolve(newImg.outerHTML);
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            } catch (error) {
+                console.error('Image conversion error:', error);
+                return imageElement.outerHTML;
+            }
+        }
+
+        // Function to process images in the container
+        async function processImagesInContainer(container) {
+            const images = container.querySelectorAll('img[src^="blob:"]');
+            
+            // Convert images to base64 in parallel
+            const processedImages = await Promise.all(
+                Array.from(images).map(convertImageToBase64)
+            );
+
+            // Replace original images with base64 versions
+            processedImages.forEach((processedImg, index) => {
+                images[index].outerHTML = processedImg;
+            });
+
+            return container;
+        }
+
+        // Process images before generating HTML
+        const processedContainer = await processImagesInContainer(messagesContainer.cloneNode(true));
+        
+        // Capture all styles
         const capturedStyles = Array.from(document.styleSheets)
             .map(sheet => {
                 try {
@@ -318,7 +366,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             })
             .join('\n');
 
-        // Generate full HTML package with enhanced scrolling
+        // Generate full HTML package with embedded images
         const fullPageHTML = `<!DOCTYPE html>
         <html>
         <head>
@@ -344,11 +392,17 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                     height: 100%;
                     overflow-y: auto;
                 }
+                /* Ensure images are responsive */
+                #time-capsule-container img {
+                    max-width: 100%;
+                    height: auto;
+                    object-fit: contain;
+                }
             </style>
         </head>
         <body>
             <div id="time-capsule-container">
-                ${messagesContainer.outerHTML}
+                ${processedContainer.outerHTML}
             </div>
             <script>
                 // Preserve original WhatsApp scrolling behavior
@@ -377,7 +431,8 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         return {
             success: true,
             mediaContent: {
-                htmlExport: true
+                htmlExport: true,
+                imagesEmbedded: true
             },
             totalMessages: document.querySelectorAll('div.message-in, div.message-out').length
         };
