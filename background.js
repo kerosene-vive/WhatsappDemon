@@ -5,7 +5,6 @@ const TIMEOUTS = {
     MAX_RETRIES: 5,
     TAB_OPERATION: 3000
 };
-
 const STATES = {
     INITIAL: 'initial',
     LOADING: 'loading',
@@ -13,7 +12,6 @@ const STATES = {
     ERROR: 'error',
     MINIMIZED: 'minimized'
 };
-
 let downloadQueue = Promise.resolve();
 const log = (msg) => console.log(`[WhatsApp Exporter] ${msg}`);
 let whatsappTabId = null;
@@ -21,12 +19,11 @@ let originalTabId = null;
 let automationInProgress = false;
 const tabStates = new Map();
 const processedDownloads = new Set();
-
 let focusInterval = null;
 let automationActive = false;
-
 let focusRetryCount = 0;
 const MAX_FOCUS_RETRIES = 3;
+
 async function enforceWhatsAppTabFocus() {
     if (!automationActive || !whatsappTabId) {
         clearFocusInterval();
@@ -90,10 +87,6 @@ async function saveCurrentTab() {
     }
     return false;
 }
-
-chrome.sidePanel
-    .setPanelBehavior({ openPanelOnActionClick: true })
-    .catch((error) => console.error('Side panel initialization error:', error));
 
 async function saveCurrentTab() {
     try {
@@ -249,7 +242,6 @@ async function handleDownload(request) {
         await chrome.downloads.download({
             url: request.data.url,
             filename: request.data.filename,
-            // New line: Allow save dialog for HTML files
             saveAs: request.data.type === 'text/html' ? true : false
         });
     } catch (error) {
@@ -263,6 +255,10 @@ function queueDownload(request) {
         .catch(error => log(`Download queue error: ${error.message}`));
     return downloadQueue;
 }
+
+chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((error) => console.error('Side panel initialization error:', error));
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     log(`Received message: ${request.action}`);

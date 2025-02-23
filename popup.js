@@ -14,7 +14,6 @@ function setupEventListeners() {
     }
 }
 
-// UI Overlay Functions
 function cleanupOverlays() {
     document.querySelectorAll('.loading-circle:not(:first-child)').forEach(el => el.remove());
     document.querySelectorAll('.loading-overlay:not(:first-child)').forEach(el => el.remove());
@@ -52,7 +51,6 @@ function createLoginMessage() {
     return message;
 }
 
-// Chat Selection Functions
 function handleWhatsAppReady() {
     document.querySelector('.loading-overlay')?.remove();
     createLoadingOverlay(false);
@@ -96,11 +94,9 @@ function createChatSelectionUI() {
     return container;
 }
 
-// Date Selection Functions
 function createDateSelectionUI() {
     const dateSelection = document.createElement('div');
     dateSelection.className = 'date-selection';
-    
     dateSelection.innerHTML = `
         <div class="date-selection-content">
             <h3>Time Range</h3>
@@ -117,12 +113,10 @@ function createDateSelectionUI() {
             </div>
         </div>
     `;
-    
     const mainContent = document.querySelector('.main-content');
     if (mainContent) {
         mainContent.appendChild(dateSelection);
     }
-    
     setupDateSelectionListeners(dateSelection);
     return dateSelection;
 }
@@ -151,15 +145,12 @@ function setDefaultDateValues(dateSelection) {
     const currentDate = new Date();
     const currentMonth = currentDate.getMonth() + 1;
     const currentYear = currentDate.getFullYear();
-    
     const endMonth = dateSelection.querySelector('#endMonth');
     const endYear = dateSelection.querySelector('#endYear');
     const startMonth = dateSelection.querySelector('#startMonth');
     const startYear = dateSelection.querySelector('#startYear');
-    
     endMonth.value = currentMonth.toString();
     endYear.value = currentYear.toString();
-    
     if (currentMonth === 1) {
         startMonth.value = "12";
         startYear.value = (currentYear - 1).toString();
@@ -173,17 +164,13 @@ function setupDateSelectionListeners(dateSelection) {
     const confirmBtn = dateSelection.querySelector('.confirm-dates');
     const cancelBtn = dateSelection.querySelector('.cancel-dates');
     const rangeSelect = dateSelection.querySelector('#timeRange');
-
     confirmBtn.addEventListener('click', () => {
         try {
             const endDate = calculateEndDate(rangeSelect.value);
-            
             const selectedChats = [...document.querySelectorAll('.chat-item input:checked')]
                 .map(input => input.value);
-
             dateSelection.classList.remove('show');
             document.body.classList.add('loading');
-            
             startMessageDownload(selectedChats, {
                 endDate: formatDateForAPI(endDate),
                 displayRange: {
@@ -195,7 +182,6 @@ function setupDateSelectionListeners(dateSelection) {
             alert('Error processing dates. Please try again.');
         }
     });
-
     cancelBtn.addEventListener('click', () => {
         dateSelection.classList.remove('show');
         document.querySelector('.chat-selection')?.classList.remove('hidden');
@@ -203,18 +189,14 @@ function setupDateSelectionListeners(dateSelection) {
     });
 }
 
-// Date Utility Functions
-
 function validateDateRange(startMonth, startYear, endMonth, endYear, confirmBtn) {
     try {
         const start = new Date(startYear.value, startMonth.value - 1);
         const end = new Date(endYear.value, endMonth.value - 1);
-        
         if (!isValidDate(start) || !isValidDate(end)) {
             confirmBtn.disabled = true;
             return;
         }
-        
         if (start > end) {
             confirmBtn.disabled = true;
             alert('Start date cannot be after end date');
@@ -246,43 +228,33 @@ function getLastDayOfMonth(year, month) {
 function calculateEndDate(range) {
     const currentDate = new Date();
     let endDate = new Date();
-    
     switch (range) {
         case 'week':
-            // Set date to 7 days ago
             endDate.setDate(currentDate.getDate() - 7);
             break;
         case 'month':
-            // Set date to 1 month ago
             endDate.setMonth(currentDate.getMonth() - 1);
             break;
         case 'year':
-            // Set date to 1 year ago
             endDate.setFullYear(currentDate.getFullYear() - 1);
             break;
         default:
             throw new Error('Invalid date range selected');
     }
-    
-    // Ensure the date is valid
     if (!isValidDate(endDate)) {
         throw new Error('Invalid date calculated');
     }
-    
     return endDate;
 }
 
-// Helper function to check if date is valid
 function isValidDate(date) {
     return date instanceof Date && !isNaN(date);
 }
 
-// Helper function to format date for API
 function formatDateForAPI(date) {
     if (!isValidDate(date)) {
         throw new Error('Invalid date for API formatting');
     }
-    
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -321,14 +293,11 @@ function handleChatProgress(message, loadingFill, statusText, totalChatsProcesse
 function handleAutomationError(statusText, buttons, taskName, loadingFill, originalTaskName, messageHandler) {
     safelyRemoveClass(document.body, 'loading');
     safelyRemoveClass('.main-content', 'loading');
-    
     document.querySelector('.date-selection')?.classList.remove('show');
     safelyRemoveClass('.chat-selection', 'hidden');
     safelyRemoveClass('#mainDownload', 'hidden');
-    
     chrome.runtime.onMessage.removeListener(messageHandler);
     resetUIState(buttons, taskName, statusText, loadingFill, originalTaskName);
-    
     if (statusText) {
         statusText.textContent = 'Error occurred. Please try again.';
     }
@@ -337,26 +306,21 @@ function handleAutomationError(statusText, buttons, taskName, loadingFill, origi
 function handleExportComplete(completionMessage, statusText, buttons, taskName, loadingFill, originalTaskName, messageHandler) {
     safelyRemoveClass(document.body, 'loading');
     safelyRemoveClass('.main-content', 'loading');
-    
     document.querySelector('.date-selection')?.classList.remove('show');
     safelyRemoveClass('.chat-selection', 'hidden');
     safelyRemoveClass('#mainDownload', 'hidden');
-
     document.querySelectorAll('.chat-item input').forEach(checkbox => {
         checkbox.disabled = false;
         checkbox.checked = false;
     });
-
     if (statusText) {
         statusText.textContent = 'All messages downloaded successfully!';
     }
-
     playNotificationSound();
     chrome.runtime.onMessage.removeListener(messageHandler);
     resetUIState(buttons, taskName, statusText, loadingFill, originalTaskName);
 }
 
-// UI Utility Functions
 function safelyAddClass(selector, className) {
     const element = document.querySelector(selector);
     if (element) {
@@ -384,7 +348,6 @@ function resetTask(loadingFill, completionMessage, statusText) {
     loadingFill.style.transition = 'all 1.5s ease';
 }
 
-
 function resetUIState(buttons, taskName, statusText, loadingFill, originalTaskName) {
     if (buttons) {
         buttons.forEach(btn => {
@@ -397,12 +360,10 @@ function resetUIState(buttons, taskName, statusText, loadingFill, originalTaskNa
     if (statusText) {
         statusText.textContent = '';
     }
-    
     document.querySelectorAll('.chat-item input').forEach(checkbox => {
         checkbox.disabled = false;
         checkbox.checked = false;
     });
-    
     if (loadingFill) {
         loadingFill.style.transition = 'none';
         loadingFill.style.width = '0%';
@@ -410,7 +371,6 @@ function resetUIState(buttons, taskName, statusText, loadingFill, originalTaskNa
         loadingFill.offsetHeight;
         loadingFill.style.transition = 'all 1.5s ease';
     }
-    
     document.querySelector('.date-selection')?.classList.remove('show');
     safelyRemoveClass('.chat-selection', 'hidden');
     safelyRemoveClass('#mainDownload', 'hidden');
@@ -423,24 +383,6 @@ function playNotificationSound() {
     }
 }
 
-// Message Listeners
-chrome.runtime.onMessage.addListener((message) => {
-    switch (message.action) {
-        case 'whatsappReady':
-            handleWhatsAppReady();
-            break;
-        case 'chatsAvailable':
-            handleChatsAvailable(message.chats);
-            break;
-        case 'whatsappClosed':
-            location.reload();
-            break;
-        case 'whatsappLoginRequired':
-            handleLoginRequired();
-            break;
-    }
-});
-
 function handleDownloadClick() {
     const selectedChats = [...document.querySelectorAll('.chat-item input:checked')]
         .map(input => input.value);
@@ -448,12 +390,10 @@ function handleDownloadClick() {
         alert('Please select at least one chat');
         return;
     }
-
     let dateSelection = document.querySelector('.date-selection');
     if (!dateSelection) {
         dateSelection = createDateSelectionUI();
     }
-
     document.querySelector('.chat-selection')?.classList.add('hidden');
     document.querySelector('#mainDownload')?.classList.add('hidden');
     dateSelection.classList.add('show');
@@ -466,19 +406,14 @@ async function startMessageDownload(selectedChats, dateRange) {
         statusText: document.querySelector('.status-text'),
         mainContent: document.querySelector('.main-content')
     };
-
     if (!validateElements(elements)) {
         console.error('Required UI elements not found');
         return;
     }
-
     if (needsReset(elements)) {
         await resetUI(elements);
     }
-
     updateUIForDownload(elements);
-    
-    // Send the automation request with only end date
     chrome.runtime.sendMessage({
         action: "startAutomation",
         selectedChats,
@@ -486,7 +421,6 @@ async function startMessageDownload(selectedChats, dateRange) {
         displayRange: dateRange.displayRange,
         includeMedia: false
     });
-
     const messageHandler = createMessageHandler(
         elements.loadingFill,
         elements.completionMessage,
@@ -495,11 +429,9 @@ async function startMessageDownload(selectedChats, dateRange) {
         elements.statusText,
         ''
     );
-    
     chrome.runtime.onMessage.addListener(messageHandler);
 }
 
-// UI Validation Functions
 function validateElements(elements) {
     return elements.loadingFill && elements.completionMessage && elements.statusText;
 }
@@ -525,12 +457,28 @@ function updateUIForDownload(elements) {
     elements.loadingFill.style.width = '20%';
 }
 
-// Cleanup on unload
+
+chrome.runtime.onMessage.addListener((message) => {
+    switch (message.action) {
+        case 'whatsappReady':
+            handleWhatsAppReady();
+            break;
+        case 'chatsAvailable':
+            handleChatsAvailable(message.chats);
+            break;
+        case 'whatsappClosed':
+            location.reload();
+            break;
+        case 'whatsappLoginRequired':
+            handleLoginRequired();
+            break;
+    }
+});
+
 window.addEventListener('unload', () => {
     cleanupPort.disconnect();
 });
 
-// Initialize when popup loads
 document.addEventListener('DOMContentLoaded', () => {
     initializeUI();
     setupEventListeners();
