@@ -6,11 +6,46 @@ let availableChats = [];
 let processingAutomation = false;
 const processedFiles = new Set();
 let resizeTimer;
-
 const VIEWPORT = {
     checkInterval: 1000,
     resizeDebounce: 250,
     minWidth: 300
+};
+const SELECTORS = {
+    CHAT_LIST: { container: '#pane-side', messages: '[role="row"]', mainPanel: '#main' },
+    MESSAGE: {
+        container: '._akbu',
+        text: '.selectable-text.copyable-text',
+        timestamp: '.x3nfvp2.xxymvpz',
+        outgoing: '.message-out',
+        incoming: '.message-in'
+    },
+    CHAT: {
+        messageContainer: '[role="application"]',
+        gridCell: '[role="gridcell"]',
+        clickableArea: '._ak8q',
+        title: 'span[dir="auto"]',
+        item: 'div._ak8l',
+        scrollContainer: 'div[tabindex="0"][role="application"]',
+        viewport: '#app, .app-wrapper-web',
+        visibilityCheck: '[data-testid="chat"]'
+    },
+    MEDIA_ELEMENTS: {
+        images: 'img[src^="blob:"], div[style*="background-image"][role="button"]',
+        videos: 'video[src^="blob:"]',
+        documents: '[role="button"][title*="Download"], .x78zum5[title*="Download"], .icon-doc-pdf, [data-testid="document-thumb"]',
+        links: 'a[href^="http"], [data-testid="link"], div[role="link"]'
+    }
+};
+const TIMEOUTS = {
+    LOAD: 1000,
+    CHAT_SELECT: 100,
+    MESSAGE_LOAD: 100,
+    MEDIA_LOAD: 100,
+    INIT_RETRY: 50,
+    DOWNLOAD_WAIT: 50,
+    SCROLL_INTERVAL: 100,
+    SCROLL_ATTEMPTS: 100
 };
 
 const monitorViewport = () => {
@@ -105,130 +140,6 @@ async function initialize() {
     if (isInitialized || initializationAttempts >= MAX_INIT_ATTEMPTS) return isInitialized;
     initializationAttempts++;
     try {
-        const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
-        if (container) {
-            container.style.height = '100vh';
-            container.style.maxHeight = 'none';
-            container.style.overflow = 'auto';
-        }
-        const viewport = document.querySelector(SELECTORS.CHAT.viewport);
-        if (viewport) {
-            viewport.style.width = '100vw';
-            viewport.style.height = '100vh';
-            viewport.style.maxHeight = 'none';
-            viewport.style.position = 'fixed';
-            viewport.style.top = '0';
-            viewport.style.left = '0';
-        }
-        const isVisible = !document.hidden;
-        if (!isVisible) {
-            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
-            return false;
-        }
-        const qrCode = document.querySelector('div[data-ref]');
-        const chatList = document.querySelector('#pane-side');
-        if (qrCode && !chatList) {
-            chrome.runtime.sendMessage({ action: 'whatsappLoginRequired' });
-            setTimeout(() => { initializationAttempts--; initialize(); }, 1000);
-            return false;
-        }
-        if (!await waitForElement('#pane-side', 10000)) {
-            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
-            return false;
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        availableChats = await getChatsList();
-        if (availableChats.length === 0) {
-            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
-            return false;
-        }
-        chrome.runtime.sendMessage({ 
-            action: 'chatsAvailable', 
-            chats: availableChats.map(chat => chat.title)
-        });
-        isInitialized = true;
-        return true;
-    } catch (error) {
-        log(`Init error: ${error.message}`);
-        if (initializationAttempts < MAX_INIT_ATTEMPTS) {
-            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
-        }
-        return false;
-    }
-}
-
-const SELECTORS = {
-    CHAT_LIST: { container: '#pane-side', messages: '[role="row"]', mainPanel: '#main' },
-    MESSAGE: {
-        container: '._akbu',
-        text: '.selectable-text.copyable-text',
-        timestamp: '.x3nfvp2.xxymvpz',
-        outgoing: '.message-out',
-        incoming: '.message-in'
-    },
-    CHAT: {
-        messageContainer: '[role="application"]',
-        gridCell: '[role="gridcell"]',
-        clickableArea: '._ak8q',
-        title: 'span[dir="auto"]',
-        item: 'div._ak8l',
-        scrollContainer: 'div[tabindex="0"][role="application"]',
-        viewport: '#app, .app-wrapper-web',
-        visibilityCheck: '[data-testid="chat"]'
-    },
-    MEDIA_ELEMENTS: {
-        images: 'img[src^="blob:"], div[style*="background-image"][role="button"]',
-        videos: 'video[src^="blob:"]',
-        documents: '[role="button"][title*="Download"], .x78zum5[title*="Download"], .icon-doc-pdf, [data-testid="document-thumb"]',
-        links: 'a[href^="http"], [data-testid="link"], div[role="link"]'
-    }
-};
-
-const TIMEOUTS = {
-    LOAD: 1000,
-    CHAT_SELECT: 100,
-    MESSAGE_LOAD: 100,
-    MEDIA_LOAD: 100,
-    INIT_RETRY: 50,
-    DOWNLOAD_WAIT: 50,
-    SCROLL_INTERVAL: 100,
-    SCROLL_ATTEMPTS: 100
-};
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    switch(request.action) {
-        case "ping":
-            sendResponse({ status: 'ready', initialized: isInitialized });
-            break;
-        case "getChats":
-            sendResponse({ chats: availableChats.map(chat => chat.title) });
-            break;
-        case "checkLoginStatus":
-            sendResponse({ needsLogin: !!document.querySelector('div[data-ref]') });
-            break;
-        case "startAutomation":
-            if (processingAutomation) {
-                sendResponse({ error: 'Automation already in progress' });
-                return true;
-            }
-            if (!isInitialized) {
-                sendResponse({ error: 'Content script not initialized' });
-                return true;
-            }
-            processingAutomation = true;
-            endDate = new Date(request.endDate);
-            automateWhatsAppExport(request.selectedChats, endDate)
-                .finally(() => processingAutomation = false);
-            sendResponse({ status: 'automation started' });
-            break;
-    }
-    return true;
-});
-
-async function initialize() {
-    if (isInitialized || initializationAttempts >= MAX_INIT_ATTEMPTS) return isInitialized;
-    initializationAttempts++;
-    try {
         const qrCode = document.querySelector('div[data-ref]');
         const chatList = document.querySelector('#pane-side');
         if (qrCode && !chatList) {
@@ -269,7 +180,6 @@ async function automateWhatsAppExport(selectedChats, endDate) {
             await new Promise((resolve) => {
                     chrome.runtime.sendMessage({ action: "enforceTabFocus" }, resolve);
                 });
-    
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(chat.clickableElement);
             await waitForElement(SELECTORS.CHAT.messageContainer);
@@ -299,13 +209,8 @@ async function automateWhatsAppExport(selectedChats, endDate) {
 
 async function extractChatContentAndMedia(chatTitle, endDate) {
     try {
-        // Ensure we've scrolled to the full chat history
         await scrollChatToTop(endDate);
-        
-        // Capture messages container
         const messagesContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
-        
-        // Function to convert image to base64
         async function convertImageToBase64(imageElement) {
             try {
                 const response = await fetch(imageElement.src);
@@ -313,10 +218,8 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 return new Promise((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onloadend = () => {
-                        // Create a new image element with the base64 src
                         const newImg = document.createElement('img');
                         newImg.src = reader.result;
-                        // Copy all original attributes
                         for (let attr of imageElement.attributes) {
                             if (attr.name !== 'src') {
                                 newImg.setAttribute(attr.name, attr.value);
@@ -332,28 +235,17 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 return imageElement.outerHTML;
             }
         }
-
-        // Function to process images in the container
         async function processImagesInContainer(container) {
             const images = container.querySelectorAll('img[src^="blob:"]');
-            
-            // Convert images to base64 in parallel
             const processedImages = await Promise.all(
                 Array.from(images).map(convertImageToBase64)
             );
-
-            // Replace original images with base64 versions
             processedImages.forEach((processedImg, index) => {
                 images[index].outerHTML = processedImg;
             });
-
             return container;
         }
-
-        // Process images before generating HTML
         const processedContainer = await processImagesInContainer(messagesContainer.cloneNode(true));
-        
-        // Capture all styles
         const capturedStyles = Array.from(document.styleSheets)
             .map(sheet => {
                 try {
@@ -365,18 +257,13 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 }
             })
             .join('\n');
-
-        // Generate full HTML package with embedded images
         const fullPageHTML = `<!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
             <title>WhatsApp Time Capsule - ${chatTitle}</title>
             <style>
-                /* Captured WhatsApp Web Styles */
                 ${capturedStyles}
-                
-                /* Enhanced Scroll Preservation */
                 body, html {
                     margin: 0;
                     padding: 0;
@@ -405,14 +292,10 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 ${processedContainer.outerHTML}
             </div>
             <script>
-                // Preserve original WhatsApp scrolling behavior
                 window.onload = function() {
                     const container = document.querySelector('${SELECTORS.CHAT.scrollContainer}');
                     if (container) {
-                        // Scroll to bottom initially
                         container.scrollTop = container.scrollHeight;
-                        
-                        // Prevent zooming on mobile
                         document.addEventListener('gesturestart', function (e) {
                             e.preventDefault();
                         });
@@ -421,13 +304,8 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             </script>
         </body>
         </html>`;
-
-        // Create blob for HTML
         const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
-        
-        // Download HTML file
         await downloadMedia(htmlBlob, `${chatTitle}_WhatsApp_TimeCapsule.html`);
-
         return {
             success: true,
             mediaContent: {
@@ -445,32 +323,24 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
 async function scrollChatToTop(endDate) {
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
     if (!container) return;
-
     let prevMessageCount = 0;
     let unchangedIterations = 0;
     const targetDate = new Date(endDate);
-
     while (unchangedIterations < 3) {
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
         const currentMessageCount = messages.length;
-
         if (currentMessageCount === prevMessageCount) {
             unchangedIterations++;
         } else {
             unchangedIterations = 0;
             prevMessageCount = currentMessageCount;
         }
-
-        // Look for date headers
         let currentElement = messages[0];
         let dateFound = false;
-
         while (currentElement && !dateFound) {
             let sibling = currentElement.previousElementSibling;
             while (sibling && !dateFound) {
                 const siblingText = sibling.textContent.trim();
-
-                // Check for date in DD/MM/YYYY format
                 if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
                     const [day, month, year] = siblingText.split('/').map(Number);
                     const messageDate = new Date(year, month - 1, day);
@@ -483,13 +353,8 @@ async function scrollChatToTop(endDate) {
             }
             currentElement = currentElement.parentElement;
         }
-
-        // Scroll to the oldest loaded message
         messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-        // Scroll up by an additional amount to load more messages
         container.scrollTop -= 1000;
-
         await new Promise(resolve => setTimeout(resolve, 1000));
     }
 }
@@ -843,6 +708,38 @@ async function collectMessages(chatTitle) {
         count: processedMessages.length
     };
 }
+
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    switch(request.action) {
+        case "ping":
+            sendResponse({ status: 'ready', initialized: isInitialized });
+            break;
+        case "getChats":
+            sendResponse({ chats: availableChats.map(chat => chat.title) });
+            break;
+        case "checkLoginStatus":
+            sendResponse({ needsLogin: !!document.querySelector('div[data-ref]') });
+            break;
+        case "startAutomation":
+            if (processingAutomation) {
+                sendResponse({ error: 'Automation already in progress' });
+                return true;
+            }
+            if (!isInitialized) {
+                sendResponse({ error: 'Content script not initialized' });
+                return true;
+            }
+            processingAutomation = true;
+            endDate = new Date(request.endDate);
+            automateWhatsAppExport(request.selectedChats, endDate)
+                .finally(() => processingAutomation = false);
+            sendResponse({ status: 'automation started' });
+            break;
+    }
+    return true;
+});
+
 
 log('Content script loaded');
 initialize();

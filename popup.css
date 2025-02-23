@@ -297,21 +297,16 @@ body {
   0% { transform: translate(-50%, -50%) rotate(0deg); }
   100% { transform: translate(-50%, -50%) rotate(360deg); }
 }
-/* Add these styles to your existing popup.css */
-
-
 .date-selection.show {
   display: flex;
 }
-
-/* Update these styles */
 .date-selection {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;  /* Add right: 0 to ensure full width */
-  bottom: 0; /* Add bottom: 0 to ensure full height */
-  width: 100vw; /* Use viewport width instead of just 100% */
+  right: 0;
+  bottom: 0;
+  width: 100vw; 
   height: 100vh;
   background: var(--bg-light);
   z-index: 9999;
@@ -320,7 +315,6 @@ body {
   align-items: center;
   justify-content: center;
 }
-
 .date-selection-content {
   background: white;
   padding: 24px;
@@ -328,23 +322,20 @@ body {
   width: 90%;
   max-width: 300px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  margin: 0 auto; /* Add this to help with centering */
-  position: relative; /* Add this to ensure proper stacking */
-  left: 0; /* Reset any potential offset */
-  transform: none; /* Reset any potential transform */
+  margin: 0 auto;
+  position: relative;
+  left: 0;
+  transform: none;
 }
-
 .date-selection h3 {
   color: var(--primary);
   font-size: 18px;
   margin: 0 0 20px 0;
   text-align: center;
 }
-
 .date-field {
   margin-bottom: 16px;
 }
-
 .date-field label {
   display: block;
   font-size: 14px;
@@ -352,7 +343,6 @@ body {
   margin-bottom: 8px;
   color: var(--text);
 }
-
 .date-field input {
   width: 100%;
   padding: 10px;
@@ -362,13 +352,11 @@ body {
   color: var(--text);
   background: white;
 }
-
 .date-actions {
   display: flex;
   gap: 12px;
   margin-top: 24px;
 }
-
 .date-actions button {
   flex: 1;
   height: 40px;
@@ -378,17 +366,14 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
 }
-
 .date-actions .confirm-dates {
   background: var(--primary);
   color: white;
   border: none;
 }
-
 .date-actions .confirm-dates:hover {
   background: var(--primary-hover);
 }
-
 .date-actions .cancel-dates {
   background: var(--bg-card);
   border: none;
@@ -397,57 +382,47 @@ body {
 .date-actions .cancel-dates:hover {
   background: #c9edb3;
 }
-
 .month-year-select {
   display: flex;
   gap: 10px;
 }
-
 .month-year-select select {
   padding: 8px;
   border-radius: 4px;
   border: 1px solid #ccc;
   background-color: white;
 }
-
 .date-field {
   margin-bottom: 15px;
 }
-
 .date-field label {
   display: block;
   margin-bottom: 5px;
   font-weight: bold;
 }
-
 .date-actions {
   margin-top: 20px;
   display: flex;
   gap: 10px;
 }
-
 .date-actions button {
   padding: 8px 16px;
   border-radius: 4px;
   cursor: pointer;
 }
-
 .confirm-dates {
   background-color: #25D366;
   color: white;
   border: none;
 }
-
 .cancel-dates {
   background-color: #f1f1f1;
   border: 1px solid #ddd;
 }
-
 .confirm-dates:disabled {
   background-color: #cccccc;
   cursor: not-allowed;
 }
-
 select {
   width: 100%;
   padding: 14px 20px;
@@ -465,25 +440,21 @@ select {
   cursor: pointer;
   transition: all 0.2s ease;
   font-family: 'Inter', sans-serif;
-  font-weight: 800;  /* Increased to extra bold */
+  font-weight: 800;
 }
-
 select:hover {
   border-color: var(--primary-hover);
 }
-
 select:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(7, 94, 84, 0.1);
 }
-
-/* Matching title style */
 .date-selection h3,
 .date-selection-content h3 {
   color: var(--primary);
   font-size: 20px;
   margin: 0 0 24px 0;
   text-align: center;
-  font-weight: 800;  /* Extra bold to match */
+  font-weight: 800;
 }
