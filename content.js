@@ -207,10 +207,114 @@ async function automateWhatsAppExport(selectedChats, endDate) {
     }
 }
 
+// This function will be called after extractChatContentAndMedia completes
+// It takes the fully generated HTML and divides it into monthly segments
+async function splitHtmlByMonthYear(fullHtml, chatTitle) {
+    // Parse the HTML
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(fullHtml, 'text/html');
+    
+    // Find the container with all messages
+    const messagesContainer = doc.querySelector('#time-capsule-container > div');
+    if (!messagesContainer) {
+        log('Could not find messages container for splitting');
+        return { success: false };
+    }
+    
+    // Helper function to get month name
+    function getMonthName(monthNum) {
+        const months = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        return months[monthNum - 1];
+    }
+    
+    // Find all date elements
+    const allElements = Array.from(messagesContainer.children);
+    const monthYearGroups = {};
+    let currentMonthYear = null;
+    let currentElements = [];
+    
+    // Group elements by month-year
+    for (let i = 0; i < allElements.length; i++) {
+        const element = allElements[i];
+        // Check if this is a date element (you might need to adjust this selector based on actual HTML structure)
+        const dateText = element.textContent?.trim();
+        
+        if (dateText && /^\d{2}\/\d{2}\/\d{4}$/.test(dateText)) {
+            // This is a date element, extract month and year
+            const [day, month, year] = dateText.split('/').map(Number);
+            const monthYear = `${getMonthName(month)}${year}`;
+            
+            // If we encounter a new month-year, start a new group
+            if (monthYear !== currentMonthYear) {
+                if (currentMonthYear && currentElements.length > 0) {
+                    // Save previous group
+                    monthYearGroups[currentMonthYear] = currentElements;
+                }
+                
+                // Start new group
+                currentMonthYear = monthYear;
+                currentElements = [element];
+            } else {
+                // Add to current group
+                currentElements.push(element);
+            }
+        } else if (currentMonthYear) {
+            // This is a normal message element, add to current group
+            currentElements.push(element);
+        }
+    }
+    
+    // Add the last group
+    if (currentMonthYear && currentElements.length > 0) {
+        monthYearGroups[currentMonthYear] = currentElements;
+    }
+    
+    // Create HTML documents for each month-year group
+    const monthYears = Object.keys(monthYearGroups);
+    const results = [];
+    
+    for (const monthYear of monthYears) {
+        // Clone the document to create a version for this month-year
+        const monthDoc = parser.parseFromString(fullHtml, 'text/html');
+        const monthContainer = monthDoc.querySelector('#time-capsule-container > div');
+        
+        // Clear container and add only elements for this month-year
+        monthContainer.innerHTML = '';
+        const groupElements = monthYearGroups[monthYear];
+        
+        for (const element of groupElements) {
+            monthContainer.appendChild(element.cloneNode(true));
+        }
+        
+        // Create HTML string for this month-year
+        const monthHtml = monthDoc.documentElement.outerHTML;
+        
+        // Create Blob and download
+        const monthBlob = new Blob([monthHtml], { type: 'text/html' });
+        await downloadMedia(monthBlob, `${chatTitle}_WhatsApp_TimeCapsule_${monthYear}.html`);
+        
+        results.push(monthYear);
+        
+        log(`Generated monthly segment: ${monthYear} with ${groupElements.length} elements`);
+    }
+    
+    return {
+        success: true,
+        monthYears: results,
+        count: monthYears.length
+    };
+}
+
+// Modified version of extractChatContentAndMedia that keeps the original intact
+// and adds the monthly division at the end
 async function extractChatContentAndMedia(chatTitle, endDate) {
     try {
         await scrollChatToTop(endDate);
         const messagesContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
+        
         async function convertImageToBase64(imageElement) {
             try {
                 const response = await fetch(imageElement.src);
@@ -235,6 +339,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 return imageElement.outerHTML;
             }
         }
+        
         async function processImagesInContainer(container) {
             const images = container.querySelectorAll('img[src^="blob:"]');
             const processedImages = await Promise.all(
@@ -245,6 +350,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             });
             return container;
         }
+        
         const processedContainer = await processImagesInContainer(messagesContainer.cloneNode(true));
         const capturedStyles = Array.from(document.styleSheets)
             .map(sheet => {
@@ -257,6 +363,8 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 }
             })
             .join('\n');
+        
+        // Create the full HTML export (keeping original code intact)
         const fullPageHTML = `<!DOCTYPE html>
         <html>
         <head>
@@ -304,15 +412,25 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             </script>
         </body>
         </html>`;
+        
+        // Save the full HTML export
         const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
         await downloadMedia(htmlBlob, `${chatTitle}_WhatsApp_TimeCapsule.html`);
+        
+        // NEW: Split the HTML into monthly segments
+        log('Splitting chat into monthly segments...');
+        const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle);
+        
+        // Return the original result with added monthly information
         return {
             success: true,
             mediaContent: {
                 htmlExport: true,
-                imagesEmbedded: true
+                imagesEmbedded: true,
+                monthlySegments: splitResult.success ? splitResult.count : 0
             },
-            totalMessages: document.querySelectorAll('div.message-in, div.message-out').length
+            totalMessages: document.querySelectorAll('div.message-in, div.message-out').length,
+            monthYears: splitResult.success ? splitResult.monthYears : []
         };
     } catch (error) {
         log(`Export error: ${error.message}`);
