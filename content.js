@@ -230,6 +230,13 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle) {
         return months[monthNum - 1];
     }
     
+    // Make sure chat folder exists
+    try {
+        log(`Ensuring folder exists for chat: ${chatTitle}`);
+    } catch (error) {
+        log(`Error checking folder: ${error.message}`);
+    }
+    
     // Find all date elements
     const allElements = Array.from(messagesContainer.children);
     const monthYearGroups = {};
@@ -273,7 +280,21 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle) {
     }
     
     // Create HTML documents for each month-year group
-    const monthYears = Object.keys(monthYearGroups);
+    // Sort month-years chronologically for better organization
+    const monthYears = Object.keys(monthYearGroups).sort((a, b) => {
+        // Extract year and month index for comparison
+        const yearA = parseInt(a.match(/\d{4}$/)[0]);
+        const yearB = parseInt(b.match(/\d{4}$/)[0]);
+        
+        if (yearA !== yearB) return yearA - yearB;
+        
+        // Same year, compare months
+        const monthA = a.replace(/\d{4}$/, '');
+        const monthB = b.replace(/\d{4}$/, '');
+        const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                        'July', 'August', 'September', 'October', 'November', 'December'];
+        return months.indexOf(monthA) - months.indexOf(monthB);
+    });
     const results = [];
     
     for (const monthYear of monthYears) {
@@ -285,6 +306,19 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle) {
         monthContainer.innerHTML = '';
         const groupElements = monthYearGroups[monthYear];
         
+        // Add a nostalgic header for the monthly archive
+        const nostalgicHeader = monthDoc.createElement('div');
+        nostalgicHeader.className = 'nostalgic-header';
+        nostalgicHeader.style.textAlign = 'center';
+        nostalgicHeader.style.padding = '15px';
+        nostalgicHeader.style.fontSize = '24px';
+        nostalgicHeader.style.fontWeight = 'bold';
+        nostalgicHeader.style.borderBottom = '2px solid #ccc';
+        nostalgicHeader.style.marginBottom = '10px';
+        nostalgicHeader.textContent = monthYear;
+        
+        monthContainer.appendChild(nostalgicHeader);
+        
         for (const element of groupElements) {
             monthContainer.appendChild(element.cloneNode(true));
         }
@@ -292,9 +326,9 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle) {
         // Create HTML string for this month-year
         const monthHtml = monthDoc.documentElement.outerHTML;
         
-        // Create Blob and download
+        // Create Blob and download with simplified nostalgic filename
         const monthBlob = new Blob([monthHtml], { type: 'text/html' });
-        await downloadMedia(monthBlob, `${chatTitle}_WhatsApp_TimeCapsule_${monthYear}.html`);
+        await downloadMedia(monthBlob, `${chatTitle}/${monthYear}.html`);
         
         results.push(monthYear);
         
@@ -369,7 +403,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         <html>
         <head>
             <meta charset="utf-8">
-            <title>WhatsApp Time Capsule - ${chatTitle}</title>
+            <title>${chatTitle} - WhatsApp Memories</title>
             <style>
                 ${capturedStyles}
                 body, html {
@@ -413,9 +447,9 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         </body>
         </html>`;
         
-        // Save the full HTML export
+        // Save the full HTML export in a folder named after the chat
         const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
-        await downloadMedia(htmlBlob, `${chatTitle}_WhatsApp_TimeCapsule.html`);
+        await downloadMedia(htmlBlob, `${chatTitle}/Complete.html`);
         
         // NEW: Split the HTML into monthly segments
         log('Splitting chat into monthly segments...');
