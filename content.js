@@ -34,7 +34,8 @@ const SELECTORS = {
         images: 'img[src^="blob:"], div[style*="background-image"][role="button"]',
         videos: 'video[src^="blob:"]',
         documents: '[role="button"][title*="Download"], .x78zum5[title*="Download"], .icon-doc-pdf, [data-testid="document-thumb"]',
-        links: 'a[href^="http"], [data-testid="link"], div[role="link"]'
+        links: 'a[href^="http"], [data-testid="link"], div[role="link"]',
+        audio: 'audio, .audio-duration, div[role="button"][data-icon="audio-play"], div[role="button"][data-icon="audio-pause"]'
     }
 };
 const TIMEOUTS = {
@@ -214,10 +215,10 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(fullHtml, 'text/html');
     
-    // Find the container with all messages
-    const messagesContainer = doc.querySelector('#time-capsule-container > div');
-    if (!messagesContainer) {
-        log('Could not find messages container for splitting');
+    // Get the time-capsule-container
+    const container = doc.querySelector('#time-capsule-container');
+    if (!container) {
+        log('Could not find container for splitting');
         return { success: false };
     }
     
@@ -230,15 +231,12 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle) {
         return months[monthNum - 1];
     }
     
-    // Make sure chat folder exists
-    try {
-        log(`Ensuring folder exists for chat: ${chatTitle}`);
-    } catch (error) {
-        log(`Error checking folder: ${error.message}`);
-    }
+    // Find all date elements and messages, excluding the header
+    const allElements = Array.from(container.children).filter((el, index) => {
+        // Skip the nostalgic header which should be the first element
+        return index > 0 || !el.classList.contains('nostalgic-header');
+    });
     
-    // Find all date elements
-    const allElements = Array.from(messagesContainer.children);
     const monthYearGroups = {};
     let currentMonthYear = null;
     let currentElements = [];
@@ -246,7 +244,7 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle) {
     // Group elements by month-year
     for (let i = 0; i < allElements.length; i++) {
         const element = allElements[i];
-        // Check if this is a date element (you might need to adjust this selector based on actual HTML structure)
+        // Check if this is a date element
         const dateText = element.textContent?.trim();
         
         if (dateText && /^\d{2}\/\d{2}\/\d{4}$/.test(dateText)) {
@@ -279,7 +277,6 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle) {
         monthYearGroups[currentMonthYear] = currentElements;
     }
     
-    // Create HTML documents for each month-year group
     // Sort month-years chronologically for better organization
     const monthYears = Object.keys(monthYearGroups).sort((a, b) => {
         // Extract year and month index for comparison
@@ -290,49 +287,51 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle) {
         
         // Same year, compare months
         const monthA = a.replace(/\d{4}$/, '');
-        const monthB = b.replace(/\d{4}$/, '');
+        const monthB = b.replace(/\d{4}$/,'');
         const months = ['January', 'February', 'March', 'April', 'May', 'June',
-                        'July', 'August', 'September', 'October', 'November', 'December'];
+                      'July', 'August', 'September', 'October', 'November', 'December'];
         return months.indexOf(monthA) - months.indexOf(monthB);
     });
+    
     const results = [];
     
+    // Create a monthly HTML file for each month-year group
     for (const monthYear of monthYears) {
-        // Clone the document to create a version for this month-year
+        // Create a new document based on the original template
         const monthDoc = parser.parseFromString(fullHtml, 'text/html');
-        const monthContainer = monthDoc.querySelector('#time-capsule-container > div');
         
-        // Clear container and add only elements for this month-year
-        monthContainer.innerHTML = '';
-        const groupElements = monthYearGroups[monthYear];
+        // Get the container
+        const monthContainer = monthDoc.querySelector('#time-capsule-container');
         
-        // Add a nostalgic header for the monthly archive
-        const nostalgicHeader = monthDoc.createElement('div');
-        nostalgicHeader.className = 'nostalgic-header';
-        nostalgicHeader.style.textAlign = 'center';
-        nostalgicHeader.style.padding = '15px';
-        nostalgicHeader.style.fontSize = '24px';
-        nostalgicHeader.style.fontWeight = 'bold';
-        nostalgicHeader.style.borderBottom = '2px solid #ccc';
-        nostalgicHeader.style.marginBottom = '10px';
-        nostalgicHeader.textContent = monthYear;
-        
-        monthContainer.appendChild(nostalgicHeader);
-        
-        for (const element of groupElements) {
-            monthContainer.appendChild(element.cloneNode(true));
+        // Clear the container while keeping the structure
+        while (monthContainer.firstChild) {
+            monthContainer.removeChild(monthContainer.firstChild);
         }
+        
+        // Create a new header for this month-year
+        const header = monthDoc.createElement('div');
+        header.className = 'nostalgic-header';
+        header.textContent = chatTitle+' - '+monthYear;
+        
+        // Add the header as the first child of the container
+        monthContainer.appendChild(header);
+        
+        // Add all elements for this month-year
+        const elements = monthYearGroups[monthYear];
+        elements.forEach(element => {
+            monthContainer.appendChild(element.cloneNode(true));
+        });
         
         // Create HTML string for this month-year
         const monthHtml = monthDoc.documentElement.outerHTML;
         
-        // Create Blob and download with simplified nostalgic filename
+        // Save as HTML file
         const monthBlob = new Blob([monthHtml], { type: 'text/html' });
         await downloadMedia(monthBlob, `${chatTitle}/${monthYear}.html`);
         
         results.push(monthYear);
         
-        log(`Generated monthly segment: ${monthYear} with ${groupElements.length} elements`);
+        log(`Generated monthly segment: ${monthYear} with ${elements.length} elements`);
     }
     
     return {
@@ -385,7 +384,10 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             return container;
         }
         
+        // Process and prepare the container with all images converted to base64
         const processedContainer = await processImagesInContainer(messagesContainer.cloneNode(true));
+        
+        // Get all styles from the document
         const capturedStyles = Array.from(document.styleSheets)
             .map(sheet => {
                 try {
@@ -398,12 +400,19 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             })
             .join('\n');
         
-        // Create the full HTML export (keeping original code intact)
+        // Create a container for the nostalgic header
+        const headerHtml = `
+            <div class="nostalgic-header">
+                ${chatTitle} - WhatsApp Memories
+            </div>
+        `;
+        
+        // Create the full HTML export with header INSIDE the container div
         const fullPageHTML = `<!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
-            <title>${chatTitle} - WhatsApp Memories</title>
+            <title>${chatTitle}</title>
             <style>
                 ${capturedStyles}
                 body, html {
@@ -412,14 +421,83 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                     height: 100%;
                     overflow: hidden;
                 }
+                .nostalgic-header {
+                    text-align: center;
+                    padding: 15px;
+                    font-size: 24px;
+                    font-weight: bold;
+                    border-bottom: 2px solid #ccc;
+                    margin-bottom: 10px;
+                    position: sticky;
+                    top: 0;
+                    background: #f0f0f0;
+                    z-index: 100;
+                }
                 #time-capsule-container {
                     height: 100vh;
                     overflow-y: auto;
                     position: relative;
                 }
-                #time-capsule-container > div {
-                    height: 100%;
-                    overflow-y: auto;
+                /* Audio message styling */
+                .message-in .audio-player, .message-out .audio-player {
+                    border-radius: 7.5px;
+                    display: flex;
+                    align-items: center;
+                    padding: 6px 10px;
+                    position: relative;
+                }
+                .message-in .audio-player {
+                    background-color: #fff;
+                }
+                .message-out .audio-player {
+                    background-color: #dcf8c6;
+                }
+                [data-theme="dark"] .message-in .audio-player {
+                    background-color: #063b28;
+                }
+                [data-theme="dark"] .message-out .audio-player {
+                    background-color: #025d4b;
+                }
+                /* Play button styling */
+                .audio-play-button {
+                    width: 34px;
+                    height: 34px;
+                    border-radius: 50%;
+                    background-color: #fff;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-right: 10px;
+                }
+                /* Audio waveform styling */
+                .audio-waveform {
+                    flex-grow: 1;
+                    height: 25px;
+                    margin: 0 10px;
+                    display: flex;
+                    align-items: center;
+                }
+                .audio-waveform-bar {
+                    background-color: #aaa;
+                    width: 2px;
+                    height: 16px;
+                    margin: 0 1px;
+                    border-radius: 1px;
+                }
+                /* Time counter styling */
+                .audio-time {
+                    font-size: 11px;
+                    color: #8696a0;
+                    margin-right: 5px;
+                    font-weight: 400;
+                }
+                /* Profile picture in audio messages */
+                .audio-player .profile-picture {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 50%;
+                    overflow: hidden;
+                    margin-right: 10px;
                 }
                 /* Ensure images are responsive */
                 #time-capsule-container img {
@@ -431,17 +509,14 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         </head>
         <body>
             <div id="time-capsule-container">
-                ${processedContainer.outerHTML}
+                ${headerHtml}
+                ${processedContainer.innerHTML}
             </div>
             <script>
                 window.onload = function() {
-                    const container = document.querySelector('${SELECTORS.CHAT.scrollContainer}');
-                    if (container) {
-                        container.scrollTop = container.scrollHeight;
-                        document.addEventListener('gesturestart', function (e) {
-                            e.preventDefault();
-                        });
-                    }
+                    document.addEventListener('gesturestart', function (e) {
+                        e.preventDefault();
+                    });
                 }
             </script>
         </body>
@@ -451,11 +526,11 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
         await downloadMedia(htmlBlob, `${chatTitle}/Complete.html`);
         
-        // NEW: Split the HTML into monthly segments
+        // Split the HTML into monthly segments
         log('Splitting chat into monthly segments...');
         const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle);
         
-        // Return the original result with added monthly information
+        // Return the result with monthly information
         return {
             success: true,
             mediaContent: {
