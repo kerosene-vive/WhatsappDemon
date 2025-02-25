@@ -102,9 +102,9 @@ function createDateSelectionUI() {
             <h3>Time Range</h3>
             <div class="range-selection">
                 <select id="timeRange" class="time-range-select">
-                    <option value="week">1  Week</option>
-                    <option value="month">1  Month</option>
-                    <option value="year">1  Year</option>
+                    <option value="1month">1 Month</option>
+                    <option value="6month">6 Months</option>
+                    <option value="year">1 Year</option>
                 </select>
             </div>
             <div class="date-actions">
@@ -228,12 +228,17 @@ function getLastDayOfMonth(year, month) {
 function calculateEndDate(range) {
     const currentDate = new Date();
     let endDate = new Date();
+    
     switch (range) {
         case 'week':
             endDate.setDate(currentDate.getDate() - 7);
             break;
         case 'month':
+        case '1month':
             endDate.setMonth(currentDate.getMonth() - 1);
+            break;
+        case '6month':
+            endDate.setMonth(currentDate.getMonth() - 6);
             break;
         case 'year':
             endDate.setFullYear(currentDate.getFullYear() - 1);
@@ -241,6 +246,7 @@ function calculateEndDate(range) {
         default:
             throw new Error('Invalid date range selected');
     }
+    
     if (!isValidDate(endDate)) {
         throw new Error('Invalid date calculated');
     }
