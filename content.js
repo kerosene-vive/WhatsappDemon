@@ -117,6 +117,18 @@ const isElementVisible = (element) => {
     );
 };
 
+function generateExportFolderName(chatTitle) {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const folderName = `Export_${day}-${month}-${year}_${hours}-${minutes}-${seconds}`;
+    return `${chatTitle}/${folderName}`;
+}
+
 async function maximizeWindow() {
     const viewport = document.querySelector(SELECTORS.CHAT.viewport);
     if (!viewport) return false;
@@ -210,7 +222,7 @@ async function automateWhatsAppExport(selectedChats, endDate) {
 
 // This function will be called after extractChatContentAndMedia completes
 // It takes the fully generated HTML and divides it into monthly segments
-async function splitHtmlByMonthYear(fullHtml, chatTitle) {
+async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
     // Parse the HTML
     const parser = new DOMParser();
     const doc = parser.parseFromString(fullHtml, 'text/html');
@@ -327,7 +339,7 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle) {
         
         // Save as HTML file
         const monthBlob = new Blob([monthHtml], { type: 'text/html' });
-        await downloadMedia(monthBlob, `${chatTitle}/${monthYear}.html`);
+        await downloadMedia(monthBlob, `${exportFolder}/${monthYear}.html`);
         
         results.push(monthYear);
         
@@ -346,6 +358,7 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle) {
 async function extractChatContentAndMedia(chatTitle, endDate) {
     try {
         await scrollChatToTop(endDate);
+        const exportFolder = generateExportFolderName(chatTitle);
         const messagesContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
         
         async function convertImageToBase64(imageElement) {
@@ -524,11 +537,11 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         
         // Save the full HTML export in a folder named after the chat
         const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
-        await downloadMedia(htmlBlob, `${chatTitle}/Complete.html`);
+        await downloadMedia(htmlBlob, `${exportFolder}/Complete.html`);
         
         // Split the HTML into monthly segments
         log('Splitting chat into monthly segments...');
-        const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle);
+        const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle, exportFolder);
         
         // Return the result with monthly information
         return {
@@ -764,6 +777,7 @@ async function collectAllMedia(chatTitle,endDate) {
         links: new Set()
     };
     await scrollChatToTop(endDate);
+    const exportFolder = generateExportFolderName(chatTitle);
     for (const type of Object.keys(mediaContent)) {
         try {
             const items = await scrollAndCollectMedia(type);
@@ -773,14 +787,14 @@ async function collectAllMedia(chatTitle,endDate) {
                         case 'images':
                         case 'videos':
                             const ext = type === 'images' ? '.jpg' : '.mp4';
-                            const filename = `${chatTitle}/${type}/${index + 1}${ext}`;
+                            const filename = `${exportFolder}/${type}/${index + 1}${ext}`;
                             const response = await fetch(item);
                             const blob = await response.blob();
                             await downloadMedia(blob, filename);
                             mediaContent[type].push(item);
                             break; 
                         case 'documents':
-                            const docResult = await processDocument(item, chatTitle, index);
+                            const docResult = await processDocument(item, chatTitle, index, exportFolder);
                             if (docResult) mediaContent.documents.add(docResult);
                             await new Promise(resolve => setTimeout(resolve, 200));
                             break;
@@ -800,10 +814,10 @@ async function collectAllMedia(chatTitle,endDate) {
     return mediaContent;
 }
 
-async function processDocument(button, chatTitle, index) {
+async function processDocument(button, chatTitle, index, exportFolder)  {
     const title = button.getAttribute('title') || '';
     const cleanTitle = title.replace(/\s*\(\d+\)\s*/, '');
-    const filename = `${chatTitle}/documents/${cleanTitle}`;
+    const filename = `${exportFolder}/documents/${cleanTitle}`;
     if (!processedFiles.has(filename)) {
         processedFiles.add(filename);
         await simulateClick(button);
