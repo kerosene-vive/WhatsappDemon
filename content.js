@@ -13,12 +13,7 @@ const MAX_INIT_ATTEMPTS = 5;
 let availableChats = [];
 let processingAutomation = false;
 const processedFiles = new Set();
-let resizeTimer;
-const VIEWPORT = {
-    checkInterval: 1000,
-    resizeDebounce: 250,
-    minWidth: 300
-};
+
 const SELECTORS = {
     CHAT_LIST: { container: '#pane-side', messages: '[role="row"]', mainPanel: '#main' },
     MESSAGE: {
@@ -55,33 +50,6 @@ const TIMEOUTS = {
     DOWNLOAD_WAIT: 50,
     SCROLL_INTERVAL: 100,
     SCROLL_ATTEMPTS: 100
-};
-
-const monitorViewport = () => {
-    window.addEventListener('resize', () => {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(handleResize, VIEWPORT.resizeDebounce);
-    });
-    document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) {
-            reinitializeIfNeeded();
-        }
-    });
-};
-
-const handleResize = async () => {
-    const viewport = document.querySelector(SELECTORS.CHAT.viewport);
-    if (!viewport || viewport.offsetWidth < VIEWPORT.minWidth) {
-        await reinitializeIfNeeded();
-    }
-};
-
-const reinitializeIfNeeded = async () => {
-    if (!isInitialized || processingAutomation) {
-        isInitialized = false;
-        initializationAttempts = 0;
-        await initialize();
-    }
 };
 
 const waitForElement = (selector, timeout = TIMEOUTS.LOAD) => 
@@ -202,45 +170,30 @@ async function automateWhatsAppExport(selectedChats, endDate) {
                     log(`Chat not found: ${chatTitle}`);
                     continue;
                 }
-                
                 await new Promise((resolve) => {
                     chrome.runtime.sendMessage({ action: "enforceTabFocus" }, resolve);
                 });
-                
-                // Wait longer for focus to take effect
                 await new Promise(resolve => setTimeout(resolve, 1000));
-                
                 log(`Clicking on chat: ${chatTitle}`);
                 simulateClick(chat.clickableElement);
-                
-                // Wait longer for the chat to load
                 await new Promise(resolve => setTimeout(resolve, 2000));
-                
                 try {
                     await waitForElement(SELECTORS.CHAT.messageContainer, 5000);
                 } catch (waitError) {
                     log(`Error waiting for message container: ${waitError.message}`);
-                    // Try clicking again
                     simulateClick(chat.clickableElement);
                     await new Promise(resolve => setTimeout(resolve, 2000));
                     await waitForElement(SELECTORS.CHAT.messageContainer, 5000);
                 }
-                
-                // Ensure DOM is ready
                 const messageContainer = document.querySelector(SELECTORS.CHAT.messageContainer);
                 if (!messageContainer) {
                     throw new Error('Message container not found after chat selection');
                 }
-                
-                // Check that scroll container exists before attempting to use it
                 const scrollContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
                 if (!scrollContainer) {
                     throw new Error('Scroll container not found');
                 }
-                
-                // Proceed with extraction
                 const result = await extractChatContentAndMedia(chatTitle, endDate);
-                
                 chrome.runtime.sendMessage({ 
                     action: "exportProgress",
                     progress: Math.round((selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100),
@@ -250,7 +203,6 @@ async function automateWhatsAppExport(selectedChats, endDate) {
                         media: result.mediaContent
                     }
                 });
-                
                 chrome.runtime.sendMessage({ action: "chatProcessed" });
             } catch (chatError) {
                 log(`Error processing chat ${chatTitle}: ${chatError.message}`);
@@ -260,7 +212,6 @@ async function automateWhatsAppExport(selectedChats, endDate) {
                 });
             }
         }
-        
         chrome.runtime.sendMessage({ 
             action: "exportComplete",
             message: `Successfully processed ${selectedChats.length} chats`
@@ -281,37 +232,25 @@ function ensureDOMReady() {
     if (!container) {
         throw new Error('Chat container not found. Please ensure WhatsApp is fully loaded.');
     }
-    
     const messageContainer = document.querySelector(SELECTORS.CHAT.messageContainer);
     if (!messageContainer) {
         throw new Error('Message container not found. Please select a chat first.');
     }
-    
-    // Check if we can find any message elements
     const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
     if (messages.length === 0) {
-        // This is not necessarily an error - could be a new chat
         log('No messages found in current chat');
     }
-    
     return true;
 }
 
-// This function will be called after extractChatContentAndMedia completes
-// It takes the fully generated HTML and divides it into monthly segments
 async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
-    // Parse the HTML
     const parser = new DOMParser();
     const doc = parser.parseFromString(fullHtml, 'text/html');
-    
-    // Get the time-capsule-container
     const container = doc.querySelector('#time-capsule-container');
     if (!container) {
         log('Could not find container for splitting');
         return { success: false };
     }
-    
-    // Helper function to get month name
     function getMonthName(monthNum) {
         const months = [
             'January', 'February', 'March', 'April', 'May', 'June',
@@ -319,110 +258,65 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
         ];
         return months[monthNum - 1];
     }
-    
-    // Find all date elements and messages, excluding the header
     const allElements = Array.from(container.children).filter((el, index) => {
-        // Skip the nostalgic header which should be the first element
         return index > 0 || !el.classList.contains('nostalgic-header');
     });
-    
     const monthYearGroups = {};
     let currentMonthYear = null;
     let currentElements = [];
-    
-    // Group elements by month-year
     for (let i = 0; i < allElements.length; i++) {
         const element = allElements[i];
-        // Check if this is a date element
         const dateText = element.textContent?.trim();
-        
         if (dateText && /^\d{2}\/\d{2}\/\d{4}$/.test(dateText)) {
-            // This is a date element, extract month and year
             const [day, month, year] = dateText.split('/').map(Number);
             const monthYear = `${getMonthName(month)}${year}`;
-            
-            // If we encounter a new month-year, start a new group
             if (monthYear !== currentMonthYear) {
                 if (currentMonthYear && currentElements.length > 0) {
-                    // Save previous group
                     monthYearGroups[currentMonthYear] = currentElements;
                 }
-                
-                // Start new group
                 currentMonthYear = monthYear;
                 currentElements = [element];
             } else {
-                // Add to current group
                 currentElements.push(element);
             }
         } else if (currentMonthYear) {
-            // This is a normal message element, add to current group
             currentElements.push(element);
         }
     }
-    
-    // Add the last group
     if (currentMonthYear && currentElements.length > 0) {
         monthYearGroups[currentMonthYear] = currentElements;
     }
-    
-    // Sort month-years chronologically for better organization
     const monthYears = Object.keys(monthYearGroups).sort((a, b) => {
-        // Extract year and month index for comparison
         const yearA = parseInt(a.match(/\d{4}$/)[0]);
         const yearB = parseInt(b.match(/\d{4}$/)[0]);
-        
         if (yearA !== yearB) return yearA - yearB;
-        
-        // Same year, compare months
         const monthA = a.replace(/\d{4}$/, '');
         const monthB = b.replace(/\d{4}$/,'');
         const months = ['January', 'February', 'March', 'April', 'May', 'June',
                       'July', 'August', 'September', 'October', 'November', 'December'];
         return months.indexOf(monthA) - months.indexOf(monthB);
     });
-    
     const results = [];
-    
-    // Create a monthly HTML file for each month-year group
     for (const monthYear of monthYears) {
-        // Create a new document based on the original template
         const monthDoc = parser.parseFromString(fullHtml, 'text/html');
-        
-        // Get the container
         const monthContainer = monthDoc.querySelector('#time-capsule-container');
-        
-        // Clear the container while keeping the structure
         while (monthContainer.firstChild) {
             monthContainer.removeChild(monthContainer.firstChild);
         }
-        
-        // Create a new header for this month-year
         const header = monthDoc.createElement('div');
         header.className = 'nostalgic-header';
         header.textContent = chatTitle+' - '+monthYear;
-        
-        // Add the header as the first child of the container
         monthContainer.appendChild(header);
-        
-        // Add all elements for this month-year
         const elements = monthYearGroups[monthYear];
         elements.forEach(element => {
             monthContainer.appendChild(element.cloneNode(true));
         });
-        
-        // Create HTML string for this month-year
         const monthHtml = monthDoc.documentElement.outerHTML;
-        
-        // Save as HTML file
         const monthBlob = new Blob([monthHtml], { type: 'text/html' });
         await downloadMedia(monthBlob, `${exportFolder}/${monthYear}.html`);
-        
         results.push(monthYear);
-        
         log(`Generated monthly segment: ${monthYear} with ${elements.length} elements`);
     }
-    
     return {
         success: true,
         monthYears: results,
@@ -430,14 +324,11 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
     };
 }
 
-// Modified version of extractChatContentAndMedia that keeps the original intact
-// and adds the monthly division at the end
 async function extractChatContentAndMedia(chatTitle, endDate) {
     try {
         await scrollChatToTop(endDate);
         const exportFolder = generateExportFolderName(chatTitle);
         const messagesContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
-        
         async function convertImageToBase64(imageElement) {
             try {
                 const response = await fetch(imageElement.src);
@@ -462,7 +353,6 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 return imageElement.outerHTML;
             }
         }
-        
         async function processImagesInContainer(container) {
             const images = container.querySelectorAll('img[src^="blob:"]');
             const processedImages = await Promise.all(
@@ -473,11 +363,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             });
             return container;
         }
-        
-        // Process and prepare the container with all images converted to base64
         const processedContainer = await processImagesInContainer(messagesContainer.cloneNode(true));
-        
-        // Get all styles from the document
         const capturedStyles = Array.from(document.styleSheets)
             .map(sheet => {
                 try {
@@ -489,15 +375,11 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 }
             })
             .join('\n');
-        
-        // Create a container for the nostalgic header
         const headerHtml = `
             <div class="nostalgic-header">
                 ${chatTitle} - WhatsApp Memories
             </div>
         `;
-        
-        // Create the full HTML export with header INSIDE the container div
         const fullPageHTML = `<!DOCTYPE html>
         <html>
         <head>
@@ -611,16 +493,10 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             </script>
         </body>
         </html>`;
-        
-        // Save the full HTML export in a folder named after the chat
         const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
         await downloadMedia(htmlBlob, `${exportFolder}/Complete.html`);
-        
-        // Split the HTML into monthly segments
         log('Splitting chat into monthly segments...');
         const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle, exportFolder);
-        
-        // Return the result with monthly information
         return {
             success: true,
             mediaContent: {
@@ -638,29 +514,22 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
 }
 
 async function scrollChatToTop(endDate) {
-    // First check if container exists
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
     if (!container) {
         log("Chat scroll container not found");
         await new Promise(resolve => setTimeout(resolve, 2000));
         return;
     }
-    
     let prevMessageCount = 0;
     let unchangedIterations = 0;
     const targetDate = new Date(endDate);
-    
     while (unchangedIterations < 3) {
-        // Get all message elements
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
-        
-        // Check if we have any messages
         if (!messages || messages.length === 0) {
             log("No messages found in chat");
             await new Promise(resolve => setTimeout(resolve, 2000));
             return;
         }
-        
         const currentMessageCount = messages.length;
         if (currentMessageCount === prevMessageCount) {
             unchangedIterations++;
@@ -668,15 +537,12 @@ async function scrollChatToTop(endDate) {
             unchangedIterations = 0;
             prevMessageCount = currentMessageCount;
         }
-        
-        // Safely get the first message
         let currentElement = messages[0];
         if (!currentElement) {
             log("First message element not found");
             await new Promise(resolve => setTimeout(resolve, 1000));
             continue;
         }
-        
         let dateFound = false;
         while (currentElement && !dateFound) {
             let sibling = currentElement.previousElementSibling;
@@ -694,12 +560,9 @@ async function scrollChatToTop(endDate) {
             }
             currentElement = currentElement.parentElement;
         }
-        
-        // Safely scroll to the first message
         try {
             if (messages[0]) {
                 messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                // Adjust scroll position
                 if (container.scrollTop > 1000) {
                     container.scrollTop -= 1000;
                 }
@@ -707,7 +570,6 @@ async function scrollChatToTop(endDate) {
         } catch (scrollError) {
             log(`Scroll error: ${scrollError.message}`);
         }
-        
         await new Promise(resolve => setTimeout(resolve, 1000));
     }
 }
@@ -820,23 +682,6 @@ const getChatsList = async () => {
             return null;
         })
         .filter(chat => chat !== null);
-};
-
-const findDownloadButton = async (container) => {
-    const downloadSelectors = [
-        'span[data-icon="download"]',
-        'button[aria-label*="Download"]',
-        'div[role="button"]:has(span[data-icon="download"])',
-        'div[title*="Download"]',
-        '[data-testid="download"]'
-    ];
-    for (const selector of downloadSelectors) {
-        const button = container.querySelector(selector) || document.querySelector(selector);
-        if (button) return button;
-    }
-    return container.querySelector('div[role="button"]') || 
-           container.closest('div[role="button"]') ||
-           container;
 };
 
 async function scrollAndCollectMedia(type) {
