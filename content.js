@@ -1,7 +1,15 @@
+if (window.whatsappExporterInitialized) {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.action === 'ping') {
+        sendResponse({ status: 'ready', initialized: true });
+        return true;
+      }
+    });
+} else {
+window.whatsappExporterInitialized = true;
 let isInitialized = false;
 let initializationAttempts = 0;
 const MAX_INIT_ATTEMPTS = 5;
-let debugSkipQRCheck = true;
 let availableChats = [];
 let processingAutomation = false;
 const processedFiles = new Set();
@@ -188,36 +196,105 @@ async function initialize() {
 async function automateWhatsAppExport(selectedChats, endDate) {
     try {
         for (let chatTitle of selectedChats) {
-            const chat = availableChats.find(c => c.title === chatTitle);
-            if (!chat) continue;
-            await new Promise((resolve) => {
+            try {
+                const chat = availableChats.find(c => c.title === chatTitle);
+                if (!chat) {
+                    log(`Chat not found: ${chatTitle}`);
+                    continue;
+                }
+                
+                await new Promise((resolve) => {
                     chrome.runtime.sendMessage({ action: "enforceTabFocus" }, resolve);
                 });
-            await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
-            simulateClick(chat.clickableElement);
-            await waitForElement(SELECTORS.CHAT.messageContainer);
-            const result = await extractChatContentAndMedia(chatTitle,endDate);
-            chrome.runtime.sendMessage({ 
-                action: "exportProgress",
-                progress: Math.round((selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100),
-                chat: chatTitle,
-                stats: {
-                    messages: result.totalMessages,
-                    media: result.mediaContent
+                
+                // Wait longer for focus to take effect
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                log(`Clicking on chat: ${chatTitle}`);
+                simulateClick(chat.clickableElement);
+                
+                // Wait longer for the chat to load
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                try {
+                    await waitForElement(SELECTORS.CHAT.messageContainer, 5000);
+                } catch (waitError) {
+                    log(`Error waiting for message container: ${waitError.message}`);
+                    // Try clicking again
+                    simulateClick(chat.clickableElement);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    await waitForElement(SELECTORS.CHAT.messageContainer, 5000);
                 }
-            });
-            chrome.runtime.sendMessage({ action: "chatProcessed" });
+                
+                // Ensure DOM is ready
+                const messageContainer = document.querySelector(SELECTORS.CHAT.messageContainer);
+                if (!messageContainer) {
+                    throw new Error('Message container not found after chat selection');
+                }
+                
+                // Check that scroll container exists before attempting to use it
+                const scrollContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
+                if (!scrollContainer) {
+                    throw new Error('Scroll container not found');
+                }
+                
+                // Proceed with extraction
+                const result = await extractChatContentAndMedia(chatTitle, endDate);
+                
+                chrome.runtime.sendMessage({ 
+                    action: "exportProgress",
+                    progress: Math.round((selectedChats.indexOf(chatTitle) + 1) / selectedChats.length * 100),
+                    chat: chatTitle,
+                    stats: {
+                        messages: result.totalMessages,
+                        media: result.mediaContent
+                    }
+                });
+                
+                chrome.runtime.sendMessage({ action: "chatProcessed" });
+            } catch (chatError) {
+                log(`Error processing chat ${chatTitle}: ${chatError.message}`);
+                chrome.runtime.sendMessage({
+                    action: "automationError",
+                    error: `Error processing chat ${chatTitle}: ${chatError.message}`
+                });
+            }
         }
+        
         chrome.runtime.sendMessage({ 
             action: "exportComplete",
             message: `Successfully processed ${selectedChats.length} chats`
         });
     } catch (error) {
+        log(`Automation error: ${error.message}`);
         chrome.runtime.sendMessage({
             action: "automationError",
             error: error.message
         });
+    } finally {
+        processingAutomation = false;
     }
+}
+
+function ensureDOMReady() {
+    const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
+    if (!container) {
+        throw new Error('Chat container not found. Please ensure WhatsApp is fully loaded.');
+    }
+    
+    const messageContainer = document.querySelector(SELECTORS.CHAT.messageContainer);
+    if (!messageContainer) {
+        throw new Error('Message container not found. Please select a chat first.');
+    }
+    
+    // Check if we can find any message elements
+    const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+    if (messages.length === 0) {
+        // This is not necessarily an error - could be a new chat
+        log('No messages found in current chat');
+    }
+    
+    return true;
 }
 
 // This function will be called after extractChatContentAndMedia completes
@@ -561,13 +638,29 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
 }
 
 async function scrollChatToTop(endDate) {
+    // First check if container exists
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
-    if (!container) return;
+    if (!container) {
+        log("Chat scroll container not found");
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return;
+    }
+    
     let prevMessageCount = 0;
     let unchangedIterations = 0;
     const targetDate = new Date(endDate);
+    
     while (unchangedIterations < 3) {
+        // Get all message elements
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+        
+        // Check if we have any messages
+        if (!messages || messages.length === 0) {
+            log("No messages found in chat");
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return;
+        }
+        
         const currentMessageCount = messages.length;
         if (currentMessageCount === prevMessageCount) {
             unchangedIterations++;
@@ -575,12 +668,20 @@ async function scrollChatToTop(endDate) {
             unchangedIterations = 0;
             prevMessageCount = currentMessageCount;
         }
+        
+        // Safely get the first message
         let currentElement = messages[0];
+        if (!currentElement) {
+            log("First message element not found");
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+        }
+        
         let dateFound = false;
         while (currentElement && !dateFound) {
             let sibling = currentElement.previousElementSibling;
             while (sibling && !dateFound) {
-                const siblingText = sibling.textContent.trim();
+                const siblingText = sibling.textContent?.trim() || "";
                 if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
                     const [day, month, year] = siblingText.split('/').map(Number);
                     const messageDate = new Date(year, month - 1, day);
@@ -593,8 +694,20 @@ async function scrollChatToTop(endDate) {
             }
             currentElement = currentElement.parentElement;
         }
-        messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-        container.scrollTop -= 1000;
+        
+        // Safely scroll to the first message
+        try {
+            if (messages[0]) {
+                messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Adjust scroll position
+                if (container.scrollTop > 1000) {
+                    container.scrollTop -= 1000;
+                }
+            }
+        } catch (scrollError) {
+            log(`Scroll error: ${scrollError.message}`);
+        }
+        
         await new Promise(resolve => setTimeout(resolve, 1000));
     }
 }
@@ -984,3 +1097,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 log('Content script loaded');
 initialize();
+}

@@ -24,26 +24,57 @@ let automationActive = false;
 let focusRetryCount = 0;
 const MAX_FOCUS_RETRIES = 3;
 
+// Enhanced enforceWhatsAppTabFocus function
 async function enforceWhatsAppTabFocus() {
     if (!automationActive || !whatsappTabId) {
         clearFocusInterval();
         return;
     }
+    
     try {
-        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const whatsappTab = await chrome.tabs.get(whatsappTabId);
-        if (!whatsappTab) {
+        // Check if WhatsApp tab still exists
+        let whatsappTab;
+        try {
+            whatsappTab = await chrome.tabs.get(whatsappTabId);
+            if (!whatsappTab) {
+                log("WhatsApp tab no longer exists");
+                clearFocusInterval();
+                return;
+            }
+        } catch (error) {
+            log(`WhatsApp tab error: ${error.message}`);
+            whatsappTabId = null;
             clearFocusInterval();
             return;
         }
+        
+        // Get the active tab in the current window
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        
+        // If no active tab is found, try to focus the WhatsApp tab directly
+        if (!activeTab) {
+            log("No active tab found, focusing WhatsApp tab directly");
+            try {
+                await chrome.tabs.update(whatsappTabId, { active: true });
+                await chrome.windows.update(whatsappTab.windowId, { focused: true });
+                focusRetryCount = 0;
+            } catch (focusError) {
+                log(`Direct focus error: ${focusError.message}`);
+                focusRetryCount++;
+            }
+            return;
+        }
+        
+        // If active tab is not the WhatsApp tab, switch focus
         if (activeTab.id !== whatsappTabId) {
+            log(`Active tab (${activeTab.id}) is not WhatsApp tab (${whatsappTabId}), switching focus`);
             try {
                 await chrome.tabs.update(whatsappTabId, { active: true });
                 await chrome.windows.update(whatsappTab.windowId, { focused: true });
                 focusRetryCount = 0;
             } catch (error) {
                 focusRetryCount++;
-                console.log(`Focus retry ${focusRetryCount}/${MAX_FOCUS_RETRIES}`);
+                log(`Focus retry ${focusRetryCount}/${MAX_FOCUS_RETRIES}: ${error.message}`);
                 if (focusRetryCount >= MAX_FOCUS_RETRIES) {
                     await new Promise(resolve => setTimeout(resolve, 2000));
                     focusRetryCount = 0;
@@ -51,6 +82,14 @@ async function enforceWhatsAppTabFocus() {
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
             }
+        } else {
+            // WhatsApp tab is already active, ensure window is focused
+            try {
+                await chrome.windows.update(whatsappTab.windowId, { focused: true });
+            } catch (error) {
+                log(`Window focus error: ${error.message}`);
+            }
+            focusRetryCount = 0;
         }
     } catch (error) {
         console.error('Focus enforcement error:', error);
@@ -116,18 +155,7 @@ async function restoreOriginalTab() {
     return false;
 }
 
-async function injectContentScript(tabId) {
-    try {
-        await chrome.scripting.executeScript({
-            target: { tabId },
-            files: ['content.js']
-        });
-        return true;
-    } catch (error) {
-        log(`Content script injection error: ${error.message}`);
-        return false;
-    }
-}
+
 
 async function verifyContentScript(tabId, maxRetries = TIMEOUTS.MAX_RETRIES) {
     for (let i = 0; i < maxRetries; i++) {
@@ -179,30 +207,77 @@ async function handleWhatsAppTab(tab, isNew = false) {
     }
 }
 
+async function injectContentScript(tabId) {
+    try {
+        // First check if content script is already running by sending a ping
+        try {
+            const response = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+            if (response?.status === 'ready') {
+                log('Content script already loaded and ready');
+                return true;
+            }
+        } catch (pingError) {
+            // Ping failed, which is expected if the script isn't loaded yet
+            log('Content script not detected, will inject');
+        }
+
+        // Inject the content script
+        await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['content.js']
+        });
+        
+        log('Content script injected successfully');
+        return true;
+    } catch (error) {
+        log(`Content script injection error: ${error.message}`);
+        return false;
+    }
+}
+
+// Enhanced handleWhatsApp function
 async function handleWhatsApp() {
     try {
         await saveCurrentTab();
         const existingTabs = await chrome.tabs.query({
             url: "https://web.whatsapp.com/*"
         });
+        
         if (existingTabs.length > 0) {
             const tab = existingTabs[0];
+            // First activate the tab to ensure it's ready
+            await chrome.tabs.update(tab.id, { active: true });
+            
+            // Ensure the window is focused
+            await chrome.windows.update(tab.windowId, { focused: true });
+            
+            // Wait a moment for focus to take effect
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
             await handleWhatsAppTab(tab, false);
             return true;
         }
+        
         const newTab = await chrome.tabs.create({
             url: 'https://web.whatsapp.com',
-            active: false
+            active: true  // Make it active immediately
         });
+        
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 reject(new Error('Tab load timeout'));
             }, 30000);
+            
             chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
                 if (tabId === newTab.id && info.status === 'complete') {
                     chrome.tabs.onUpdated.removeListener(listener);
                     clearTimeout(timeout);
-                    handleWhatsAppTab(newTab, true)
+                    
+                    // Focus the tab again to be certain
+                    chrome.tabs.update(newTab.id, { active: true })
+                        .then(() => chrome.windows.update(newTab.windowId, { focused: true }))
+                        .then(() => new Promise(resolve => setTimeout(resolve, 1000)))
+                        .then(() => handleWhatsAppTab(newTab, true))
                         .then(resolve)
                         .catch(reject);
                 }
@@ -260,7 +335,7 @@ chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error) => console.error('Side panel initialization error:', error));
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     log(`Received message: ${request.action}`);
     switch (request.action) {
         case "initializeWhatsApp":
@@ -271,30 +346,83 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     message: error.message 
                 }));
             return true;
-            case "startAutomation":
-                if (whatsappTabId) {
-                    startFocusInterval();
-                    chrome.tabs.sendMessage(whatsappTabId, {
-                        action: 'startAutomation',
-                        selectedChats: request.selectedChats,
-                        endDate: request.endDate,
-                        includeMedia: request.includeMedia
-                    })
-                        .then(() => sendResponse({ status: 'automation started' }))
-                        .catch(error => {
-                            clearFocusInterval();
-                            sendResponse({ 
-                                status: 'error', 
-                                message: error.message 
-                            });
-                        });
-                } else {
+        // Modify the startAutomation case in the message listener
+        case "startAutomation":
+    if (whatsappTabId) {
+        // First ensure the WhatsApp tab is focused before starting automation
+        try {
+            const tab = await chrome.tabs.get(whatsappTabId);
+            if (!tab) {
+                sendResponse({ 
+                    status: 'error', 
+                    message: 'WhatsApp tab not found' 
+                });
+                return true;
+            }
+            
+            // Make sure tab is active and window is focused before proceeding
+            await chrome.tabs.update(whatsappTabId, { active: true });
+            await chrome.windows.update(tab.windowId, { focused: true });
+            
+            // Add a longer delay to ensure the focus takes effect and page is fully interactive
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            // Verify content script is ready before proceeding
+            try {
+                const pingResponse = await chrome.tabs.sendMessage(whatsappTabId, { action: 'ping' });
+                if (pingResponse?.status !== 'ready') {
+                    throw new Error('Content script not ready');
+                }
+            } catch (pingError) {
+                // Try injecting the content script again
+                await injectContentScript(whatsappTabId);
+                await new Promise(resolve => setTimeout(resolve, TIMEOUTS.SCRIPT_INIT));
+                
+                // Check again if it's ready
+                try {
+                    const retryResponse = await chrome.tabs.sendMessage(whatsappTabId, { action: 'ping' });
+                    if (retryResponse?.status !== 'ready') {
+                        throw new Error('Content script initialization failed');
+                    }
+                } catch (retryError) {
                     sendResponse({ 
                         status: 'error', 
-                        message: 'WhatsApp tab not initialized' 
+                        message: 'WhatsApp page not ready. Please refresh the page and try again.' 
                     });
+                    return true;
                 }
-                return true;
+            }
+            
+            // Now start the automation
+            startFocusInterval();
+            try {
+                await chrome.tabs.sendMessage(whatsappTabId, {
+                    action: 'startAutomation',
+                    selectedChats: request.selectedChats,
+                    endDate: request.endDate,
+                    includeMedia: request.includeMedia
+                });
+                sendResponse({ status: 'automation started' });
+            } catch (error) {
+                clearFocusInterval();
+                sendResponse({ 
+                    status: 'error', 
+                    message: error.message 
+                });
+            }
+        } catch (error) {
+            sendResponse({ 
+                status: 'error', 
+                message: `Error focusing WhatsApp tab: ${error.message}` 
+            });
+        }
+    } else {
+        sendResponse({ 
+            status: 'error', 
+            message: 'WhatsApp tab not initialized' 
+        });
+    }
+    return true;
         case "enforceTabFocus":
             enforceWhatsAppTabFocus()
                 .then(() => sendResponse({ status: 'focus enforced' }));
