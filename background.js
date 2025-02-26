@@ -23,6 +23,115 @@ let focusInterval = null;
 let automationActive = false;
 let focusRetryCount = 0;
 const MAX_FOCUS_RETRIES = 3;
+let html2pdf;
+
+async function loadHTML2PDFLibrary() {
+    return new Promise((resolve, reject) => {
+      // Check if html2pdf is already loaded
+      if (self.html2pdf) {
+        resolve(self.html2pdf);
+        return;
+      }
+  
+      try {
+        // Load the html2pdf library using importScripts
+        self.importScripts(chrome.runtime.getURL('libs/html2pdf.bundle.min.js'));
+  
+        // Check if html2pdf is available after loading
+        if (self.html2pdf) {
+          resolve(self.html2pdf);
+        } else {
+          reject(new Error('html2pdf library failed to load'));
+        }
+      } catch (error) {
+        reject(new Error(`Failed to load html2pdf library: ${error.message}`));
+      }
+    });
+  }
+
+// Chunk-based PDF conversion for large files
+async function convertHTMLToPDF(html, chatTitle) {
+  // Ensure library is loaded
+  if (!html2pdf) {
+    await loadHTML2PDFLibrary();
+  }
+
+  try {
+    // Create a unique processing ID
+    const processingId = `pdf_${Date.now()}`;
+
+    // Send initial progress
+    chrome.runtime.sendMessage({
+      action: 'pdfConversionProgress',
+      progress: 10,
+      processingId,
+      message: 'Starting PDF conversion'
+    });
+
+    // Convert HTML to PDF
+    const pdfBlob = await new Promise((resolve, reject) => {
+      try {
+        html2pdf()
+          .set({
+            margin: 1,
+            filename: `WhatsApp_${chatTitle}_Export`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { 
+              scale: 2,
+              logging: false,
+              useCORS: true
+            },
+            jsPDF: { 
+              unit: 'in', 
+              format: 'letter', 
+              orientation: 'portrait' 
+            }
+          })
+          .from(html)
+          .outputPdf('blob')
+          .then(resolve)
+          .catch(reject);
+      } catch (conversionError) {
+        reject(conversionError);
+      }
+    });
+
+    // Send progress update
+    chrome.runtime.sendMessage({
+      action: 'pdfConversionProgress',
+      progress: 90,
+      processingId,
+      message: 'PDF conversion complete'
+    });
+
+    // Download the PDF
+    const filename = `WhatsApp_${chatTitle}_Export_${new Date().toISOString().replace(/:/g, '-')}.pdf`;
+    chrome.downloads.download({
+      url: URL.createObjectURL(pdfBlob),
+      filename: filename,
+      saveAs: true
+    });
+
+    // Final progress
+    chrome.runtime.sendMessage({
+      action: 'pdfConversionProgress',
+      progress: 100,
+      processingId,
+      message: 'PDF downloaded successfully'
+    });
+
+    return { status: 'success', processingId };
+  } catch (error) {
+    // Error handling
+    chrome.runtime.sendMessage({
+      action: 'pdfConversionError',
+      error: error.message,
+      processingId
+    });
+    
+    throw error;
+  }
+}
 
 async function enforceWhatsAppTabFocus() {
     if (!automationActive || !whatsappTabId) {
@@ -414,6 +523,14 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
                     message: error.message 
                 }));
             return true;
+        case "convertHTMLToPDF":
+                try {
+                  const result = await convertHTMLToPDF(request.html, request.chatTitle);
+                  sendResponse(result);
+                } catch (error) {
+                  sendResponse({ status: 'error', message: error.message });
+                }
+                return true;
         case "mediaProgress":
         case "exportProgress":
             chrome.runtime.sendMessage(request).catch(() => {});
@@ -430,6 +547,25 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
             restoreOriginalTab().catch(error => 
                 log(`Error restoring tab: ${error.message}`));
             break;
+            case "convertHTMLToPDF":
+                // Ensure HTML and chatTitle are provided
+                if (!request.html || !request.chatTitle) {
+                  sendResponse({ 
+                    status: 'error', 
+                    message: 'HTML content and chat title are required' 
+                  });
+                  return true;
+                }
+          
+                // Call PDF conversion
+                convertHTMLToPDF(request.html, request.chatTitle)
+                  .then(result => sendResponse(result))
+                  .catch(error => sendResponse({ 
+                    status: 'error', 
+                    message: error.message 
+                  }));
+                
+                return true;
         case "debugLog":
         case "whatsappLoginRequired":
             if (!sender.tab || sender.tab.id === whatsappTabId) {
@@ -470,4 +606,5 @@ chrome.runtime.onConnect.addListener((port) => {
     }
 });
 
+loadHTML2PDFLibrary().catch(console.error);
 log('Background script loaded');

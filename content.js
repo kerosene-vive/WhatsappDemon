@@ -1,5 +1,5 @@
 if (window.whatsappExporterInitialized) {
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
       if (request.action === 'ping') {
         sendResponse({ status: 'ready', initialized: true });
         return true;
@@ -243,92 +243,12 @@ function ensureDOMReady() {
     return true;
 }
 
-async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(fullHtml, 'text/html');
-    const container = doc.querySelector('#time-capsule-container');
-    if (!container) {
-        log('Could not find container for splitting');
-        return { success: false };
-    }
-    function getMonthName(monthNum) {
-        const months = [
-            'January', 'February', 'March', 'April', 'May', 'June',
-            'July', 'August', 'September', 'October', 'November', 'December'
-        ];
-        return months[monthNum - 1];
-    }
-    const allElements = Array.from(container.children).filter((el, index) => {
-        return index > 0 || !el.classList.contains('nostalgic-header');
-    });
-    const monthYearGroups = {};
-    let currentMonthYear = null;
-    let currentElements = [];
-    for (let i = 0; i < allElements.length; i++) {
-        const element = allElements[i];
-        const dateText = element.textContent?.trim();
-        if (dateText && /^\d{2}\/\d{2}\/\d{4}$/.test(dateText)) {
-            const [day, month, year] = dateText.split('/').map(Number);
-            const monthYear = `${getMonthName(month)}${year}`;
-            if (monthYear !== currentMonthYear) {
-                if (currentMonthYear && currentElements.length > 0) {
-                    monthYearGroups[currentMonthYear] = currentElements;
-                }
-                currentMonthYear = monthYear;
-                currentElements = [element];
-            } else {
-                currentElements.push(element);
-            }
-        } else if (currentMonthYear) {
-            currentElements.push(element);
-        }
-    }
-    if (currentMonthYear && currentElements.length > 0) {
-        monthYearGroups[currentMonthYear] = currentElements;
-    }
-    const monthYears = Object.keys(monthYearGroups).sort((a, b) => {
-        const yearA = parseInt(a.match(/\d{4}$/)[0]);
-        const yearB = parseInt(b.match(/\d{4}$/)[0]);
-        if (yearA !== yearB) return yearA - yearB;
-        const monthA = a.replace(/\d{4}$/, '');
-        const monthB = b.replace(/\d{4}$/,'');
-        const months = ['January', 'February', 'March', 'April', 'May', 'June',
-                      'July', 'August', 'September', 'October', 'November', 'December'];
-        return months.indexOf(monthA) - months.indexOf(monthB);
-    });
-    const results = [];
-    for (const monthYear of monthYears) {
-        const monthDoc = parser.parseFromString(fullHtml, 'text/html');
-        const monthContainer = monthDoc.querySelector('#time-capsule-container');
-        while (monthContainer.firstChild) {
-            monthContainer.removeChild(monthContainer.firstChild);
-        }
-        const header = monthDoc.createElement('div');
-        header.className = 'nostalgic-header';
-        header.textContent = chatTitle+' - '+monthYear;
-        monthContainer.appendChild(header);
-        const elements = monthYearGroups[monthYear];
-        elements.forEach(element => {
-            monthContainer.appendChild(element.cloneNode(true));
-        });
-        const monthHtml = monthDoc.documentElement.outerHTML;
-        const monthBlob = new Blob([monthHtml], { type: 'text/html' });
-        await downloadMedia(monthBlob, `${exportFolder}/${monthYear}.html`);
-        results.push(monthYear);
-        log(`Generated monthly segment: ${monthYear} with ${elements.length} elements`);
-    }
-    return {
-        success: true,
-        monthYears: results,
-        count: monthYears.length
-    };
-}
-
 async function extractChatContentAndMedia(chatTitle, endDate) {
     try {
         await scrollChatToTop(endDate);
         const exportFolder = generateExportFolderName(chatTitle);
         const messagesContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
+        
         async function convertImageToBase64(imageElement) {
             try {
                 const response = await fetch(imageElement.src);
@@ -353,6 +273,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 return imageElement.outerHTML;
             }
         }
+        
         async function processImagesInContainer(container) {
             const images = container.querySelectorAll('img[src^="blob:"]');
             const processedImages = await Promise.all(
@@ -363,7 +284,9 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             });
             return container;
         }
+        
         const processedContainer = await processImagesInContainer(messagesContainer.cloneNode(true));
+        
         const capturedStyles = Array.from(document.styleSheets)
             .map(sheet => {
                 try {
@@ -375,11 +298,13 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 }
             })
             .join('\n');
+        
         const headerHtml = `
             <div class="nostalgic-header">
                 ${chatTitle} - WhatsApp Memories
             </div>
         `;
+        
         const fullPageHTML = `<!DOCTYPE html>
         <html>
         <head>
@@ -410,73 +335,6 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                     overflow-y: auto;
                     position: relative;
                 }
-                /* Audio message styling */
-                .message-in .audio-player, .message-out .audio-player {
-                    border-radius: 7.5px;
-                    display: flex;
-                    align-items: center;
-                    padding: 6px 10px;
-                    position: relative;
-                }
-                .message-in .audio-player {
-                    background-color: #fff;
-                }
-                .message-out .audio-player {
-                    background-color: #dcf8c6;
-                }
-                [data-theme="dark"] .message-in .audio-player {
-                    background-color: #063b28;
-                }
-                [data-theme="dark"] .message-out .audio-player {
-                    background-color: #025d4b;
-                }
-                /* Play button styling */
-                .audio-play-button {
-                    width: 34px;
-                    height: 34px;
-                    border-radius: 50%;
-                    background-color: #fff;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin-right: 10px;
-                }
-                /* Audio waveform styling */
-                .audio-waveform {
-                    flex-grow: 1;
-                    height: 25px;
-                    margin: 0 10px;
-                    display: flex;
-                    align-items: center;
-                }
-                .audio-waveform-bar {
-                    background-color: #aaa;
-                    width: 2px;
-                    height: 16px;
-                    margin: 0 1px;
-                    border-radius: 1px;
-                }
-                /* Time counter styling */
-                .audio-time {
-                    font-size: 11px;
-                    color: #8696a0;
-                    margin-right: 5px;
-                    font-weight: 400;
-                }
-                /* Profile picture in audio messages */
-                .audio-player .profile-picture {
-                    width: 40px;
-                    height: 40px;
-                    border-radius: 50%;
-                    overflow: hidden;
-                    margin-right: 10px;
-                }
-                /* Ensure images are responsive */
-                #time-capsule-container img {
-                    max-width: 100%;
-                    height: auto;
-                    object-fit: contain;
-                }
             </style>
         </head>
         <body>
@@ -484,33 +342,159 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 ${headerHtml}
                 ${processedContainer.innerHTML}
             </div>
-            <script>
-                window.onload = function() {
-                    document.addEventListener('gesturestart', function (e) {
-                        e.preventDefault();
-                    });
-                }
-            </script>
         </body>
         </html>`;
+        
         const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
         await downloadMedia(htmlBlob, `${exportFolder}/Complete.html`);
+        
         log('Splitting chat into monthly segments...');
-        const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle, exportFolder);
-        return {
-            success: true,
-            mediaContent: {
-                htmlExport: true,
-                imagesEmbedded: true,
-                monthlySegments: splitResult.success ? splitResult.count : 0
-            },
-            totalMessages: document.querySelectorAll('div.message-in, div.message-out').length,
-            monthYears: splitResult.success ? splitResult.monthYears : []
-        };
-    } catch (error) {
-        log(`Export error: ${error.message}`);
-        throw error;
+        log('Splitting chat into monthly segments...');
+const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle, exportFolder);
+
+const conversionRequests = [
+  {
+    html: fullPageHTML,
+    filename: `${chatTitle}_Complete_Export`
+  },
+  ...splitResult.monthlyHTMLs.map((monthHtml, index) => ({
+    html: monthHtml,
+    filename: `${chatTitle}_${splitResult.monthYears[index]}_Export`
+  }))
+];
+
+await Promise.all(conversionRequests.map(request =>
+  new Promise((resolve) => {
+    chrome.runtime.sendMessage({
+      action: 'convertHTMLToPDF',
+      html: request.html,
+      chatTitle: request.filename
+    }, resolve);
+  })
+));
+
+return {
+  success: true,
+  fullPageHTML: fullPageHTML,
+  monthlyHTMLs: splitResult.monthlyHTMLs || [],
+  mediaContent: {
+    htmlExport: true,
+    imagesEmbedded: true,
+    monthlySegments: splitResult.success ? splitResult.count : 0
+  },
+  totalMessages: document.querySelectorAll('div.message-in, div.message-out').length,
+  monthYears: splitResult.success ? splitResult.monthYears : []
+};
+} catch (error) {
+    log(`Error extracting chat content: ${error.message}`);
+    return { success: false, error: error.message };
+}
+}
+
+async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(fullHtml, 'text/html');
+    const container = doc.querySelector('#time-capsule-container');
+    
+    if (!container) {
+        log('Could not find container for splitting');
+        return { success: false, monthlyHTMLs: [], monthYears: [] };
     }
+    
+    function getMonthName(monthNum) {
+        const months = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        return months[monthNum - 1];
+    }
+    
+    const allElements = Array.from(container.children).filter((el, index) => {
+        return index > 0 || !el.classList.contains('nostalgic-header');
+    });
+    
+    const monthYearGroups = {};
+    let currentMonthYear = null;
+    let currentElements = [];
+    
+    for (let i = 0; i < allElements.length; i++) {
+        const element = allElements[i];
+        const dateText = element.textContent?.trim();
+        
+        if (dateText && /^\d{2}\/\d{2}\/\d{4}$/.test(dateText)) {
+            const [day, month, year] = dateText.split('/').map(Number);
+            const monthYear = `${getMonthName(month)}${year}`;
+            
+            if (monthYear !== currentMonthYear) {
+                if (currentMonthYear && currentElements.length > 0) {
+                    monthYearGroups[currentMonthYear] = currentElements;
+                }
+                currentMonthYear = monthYear;
+                currentElements = [element];
+            } else {
+                currentElements.push(element);
+            }
+        } else if (currentMonthYear) {
+            currentElements.push(element);
+        }
+    }
+    
+    if (currentMonthYear && currentElements.length > 0) {
+        monthYearGroups[currentMonthYear] = currentElements;
+    }
+    
+    const monthYears = Object.keys(monthYearGroups).sort((a, b) => {
+        const yearA = parseInt(a.match(/\d{4}$/)[0]);
+        const yearB = parseInt(b.match(/\d{4}$/)[0]);
+        
+        if (yearA !== yearB) return yearA - yearB;
+        
+        const monthA = a.replace(/\d{4}$/, '');
+        const monthB = b.replace(/\d{4}$/,'');
+        
+        const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+        
+        return months.indexOf(monthA) - months.indexOf(monthB);
+    });
+    
+    const monthlyHTMLs = [];
+    const results = [];
+    
+    for (const monthYear of monthYears) {
+        const monthDoc = parser.parseFromString(fullHtml, 'text/html');
+        const monthContainer = monthDoc.querySelector('#time-capsule-container');
+        
+        while (monthContainer.firstChild) {
+            monthContainer.removeChild(monthContainer.firstChild);
+        }
+        
+        const header = monthDoc.createElement('div');
+        header.className = 'nostalgic-header';
+        header.textContent = `${chatTitle} - ${monthYear}`;
+        monthContainer.appendChild(header);
+        
+        const elements = monthYearGroups[monthYear];
+        elements.forEach(element => {
+            monthContainer.appendChild(element.cloneNode(true));
+        });
+        
+        const monthHtml = monthDoc.documentElement.outerHTML;
+        monthlyHTMLs.push(monthHtml);
+        
+        const monthBlob = new Blob([monthHtml], { type: 'text/html' });
+        await downloadMedia(monthBlob, `${exportFolder}/${monthYear}.html`);
+        
+        results.push(monthYear);
+        log(`Generated monthly segment: ${monthYear} with ${elements.length} elements`);
+    }
+    
+    return {
+        success: true,
+        monthYears: results,
+        count: monthYears.length,
+        monthlyHTMLs: monthlyHTMLs
+    };
 }
 
 async function scrollChatToTop(endDate) {
@@ -909,7 +893,7 @@ async function collectMessages(chatTitle) {
 }
 
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     switch(request.action) {
         case "ping":
             sendResponse({ status: 'ready', initialized: isInitialized });
@@ -920,6 +904,86 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case "checkLoginStatus":
             sendResponse({ needsLogin: !!document.querySelector('div[data-ref]') });
             break;
+        // Add this to your existing message listeners
+        case "prepareHTMLForPDF":
+    try {
+        // Ensure a chat is selected
+        const messageContainer = document.querySelector(SELECTORS.CHAT.messageContainer);
+        if (!messageContainer) {
+            sendResponse({ 
+                status: 'error', 
+                message: 'No chat selected. Please select a chat first.' 
+            });
+            return true;
+        }
+
+        // Get chat title
+        const chatTitleElement = document.querySelector(SELECTORS.CHAT.title);
+        const chatTitle = chatTitleElement 
+            ? chatTitleElement.getAttribute('title') 
+            : 'WhatsApp_Chat';
+
+        // Extract chat content and media
+        const result = await extractChatContentAndMedia(chatTitle, new Date());
+        
+        // Prepare conversion requests
+        const conversionRequests = [
+            {
+                html: result.fullPageHTML,
+                filename: `${chatTitle}_Complete_Export`
+            },
+            ...result.monthYears.map((monthYear, index) => ({
+                html: result.monthlyHTMLs[index],
+                filename: `${chatTitle}_${monthYear}_Export`
+            }))
+        ];
+        
+        // Send conversion requests to background script
+        const conversionResults = await Promise.all(
+            conversionRequests.map(request => 
+                new Promise((resolve) => {
+                    chrome.runtime.sendMessage({
+                        action: 'convertHTMLToPDF',
+                        html: request.html,
+                        chatTitle: request.filename
+                    }, (response) => {
+                        resolve({
+                            filename: request.filename,
+                            ...response
+                        });
+                    });
+                })
+            )
+        );
+        
+        // Check conversion results
+        const failedConversions = conversionResults.filter(
+            result => result.status !== 'success'
+        );
+
+        if (failedConversions.length > 0) {
+            sendResponse({
+                status: 'partial_error',
+                message: 'Some PDF conversions failed',
+                failures: failedConversions.map(f => f.filename)
+            });
+        } else {
+            sendResponse({ 
+                status: 'success', 
+                message: 'All PDFs converted successfully',
+                pdfs: conversionResults.map(r => r.filename)
+            });
+        }
+
+        return true; // Allow asynchronous response
+    } catch (error) {
+        log(`PDF preparation error: ${error.message}`);
+        sendResponse({ 
+            status: 'error', 
+            message: error.message 
+        });
+        return true;
+    }
         case "startAutomation":
             if (processingAutomation) {
                 sendResponse({ error: 'Automation already in progress' });
