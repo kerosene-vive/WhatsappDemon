@@ -6,11 +6,47 @@ let availableChats = [];
 let processingAutomation = false;
 const processedFiles = new Set();
 let resizeTimer;
-
 const VIEWPORT = {
     checkInterval: 1000,
     resizeDebounce: 250,
     minWidth: 300
+};
+const SELECTORS = {
+    CHAT_LIST: { container: '#pane-side', messages: '[role="row"]', mainPanel: '#main' },
+    MESSAGE: {
+        container: '._akbu',
+        text: '.selectable-text.copyable-text',
+        timestamp: '.x3nfvp2.xxymvpz',
+        outgoing: '.message-out',
+        incoming: '.message-in'
+    },
+    CHAT: {
+        messageContainer: '[role="application"]',
+        gridCell: '[role="gridcell"]',
+        clickableArea: '._ak8q',
+        title: 'span[dir="auto"]',
+        item: 'div._ak8l',
+        scrollContainer: 'div[tabindex="0"][role="application"]',
+        viewport: '#app, .app-wrapper-web',
+        visibilityCheck: '[data-testid="chat"]'
+    },
+    MEDIA_ELEMENTS: {
+        images: 'img[src^="blob:"], div[style*="background-image"][role="button"]',
+        videos: 'video[src^="blob:"]',
+        documents: '[role="button"][title*="Download"], .x78zum5[title*="Download"], .icon-doc-pdf, [data-testid="document-thumb"]',
+        links: 'a[href^="http"], [data-testid="link"], div[role="link"]',
+        audio: 'audio, .audio-duration, div[role="button"][data-icon="audio-play"], div[role="button"][data-icon="audio-pause"]'
+    }
+};
+const TIMEOUTS = {
+    LOAD: 1000,
+    CHAT_SELECT: 100,
+    MESSAGE_LOAD: 100,
+    MEDIA_LOAD: 100,
+    INIT_RETRY: 50,
+    DOWNLOAD_WAIT: 50,
+    SCROLL_INTERVAL: 100,
+    SCROLL_ATTEMPTS: 100
 };
 
 const monitorViewport = () => {
@@ -81,6 +117,18 @@ const isElementVisible = (element) => {
     );
 };
 
+function generateExportFolderName(chatTitle) {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const folderName = `Export_${day}-${month}-${year}_${hours}-${minutes}-${seconds}`;
+    return `${chatTitle}/${folderName}`;
+}
+
 async function maximizeWindow() {
     const viewport = document.querySelector(SELECTORS.CHAT.viewport);
     if (!viewport) return false;
@@ -100,130 +148,6 @@ async function restoreWindow(viewport, originalStyles) {
     if (!viewport || !originalStyles) return;
     Object.assign(viewport.style, originalStyles);
 }
-
-async function initialize() {
-    if (isInitialized || initializationAttempts >= MAX_INIT_ATTEMPTS) return isInitialized;
-    initializationAttempts++;
-    try {
-        const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
-        if (container) {
-            container.style.height = '100vh';
-            container.style.maxHeight = 'none';
-            container.style.overflow = 'auto';
-        }
-        const viewport = document.querySelector(SELECTORS.CHAT.viewport);
-        if (viewport) {
-            viewport.style.width = '100vw';
-            viewport.style.height = '100vh';
-            viewport.style.maxHeight = 'none';
-            viewport.style.position = 'fixed';
-            viewport.style.top = '0';
-            viewport.style.left = '0';
-        }
-        const isVisible = !document.hidden;
-        if (!isVisible) {
-            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
-            return false;
-        }
-        const qrCode = document.querySelector('div[data-ref]');
-        const chatList = document.querySelector('#pane-side');
-        if (qrCode && !chatList) {
-            chrome.runtime.sendMessage({ action: 'whatsappLoginRequired' });
-            setTimeout(() => { initializationAttempts--; initialize(); }, 1000);
-            return false;
-        }
-        if (!await waitForElement('#pane-side', 10000)) {
-            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
-            return false;
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        availableChats = await getChatsList();
-        if (availableChats.length === 0) {
-            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
-            return false;
-        }
-        chrome.runtime.sendMessage({ 
-            action: 'chatsAvailable', 
-            chats: availableChats.map(chat => chat.title)
-        });
-        isInitialized = true;
-        return true;
-    } catch (error) {
-        log(`Init error: ${error.message}`);
-        if (initializationAttempts < MAX_INIT_ATTEMPTS) {
-            setTimeout(initialize, TIMEOUTS.INIT_RETRY);
-        }
-        return false;
-    }
-}
-
-const SELECTORS = {
-    CHAT_LIST: { container: '#pane-side', messages: '[role="row"]', mainPanel: '#main' },
-    MESSAGE: {
-        container: '._akbu',
-        text: '.selectable-text.copyable-text',
-        timestamp: '.x3nfvp2.xxymvpz',
-        outgoing: '.message-out',
-        incoming: '.message-in'
-    },
-    CHAT: {
-        messageContainer: '[role="application"]',
-        gridCell: '[role="gridcell"]',
-        clickableArea: '._ak8q',
-        title: 'span[dir="auto"]',
-        item: 'div._ak8l',
-        scrollContainer: 'div[tabindex="0"][role="application"]',
-        viewport: '#app, .app-wrapper-web',
-        visibilityCheck: '[data-testid="chat"]'
-    },
-    MEDIA_ELEMENTS: {
-        images: 'img[src^="blob:"], div[style*="background-image"][role="button"]',
-        videos: 'video[src^="blob:"]',
-        documents: '[role="button"][title*="Download"], .x78zum5[title*="Download"], .icon-doc-pdf, [data-testid="document-thumb"]',
-        links: 'a[href^="http"], [data-testid="link"], div[role="link"]'
-    }
-};
-
-const TIMEOUTS = {
-    LOAD: 1000,
-    CHAT_SELECT: 100,
-    MESSAGE_LOAD: 100,
-    MEDIA_LOAD: 100,
-    INIT_RETRY: 50,
-    DOWNLOAD_WAIT: 50,
-    SCROLL_INTERVAL: 100,
-    SCROLL_ATTEMPTS: 100
-};
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    switch(request.action) {
-        case "ping":
-            sendResponse({ status: 'ready', initialized: isInitialized });
-            break;
-        case "getChats":
-            sendResponse({ chats: availableChats.map(chat => chat.title) });
-            break;
-        case "checkLoginStatus":
-            sendResponse({ needsLogin: !!document.querySelector('div[data-ref]') });
-            break;
-        case "startAutomation":
-            if (processingAutomation) {
-                sendResponse({ error: 'Automation already in progress' });
-                return true;
-            }
-            if (!isInitialized) {
-                sendResponse({ error: 'Content script not initialized' });
-                return true;
-            }
-            processingAutomation = true;
-            endDate = new Date(request.endDate);
-            automateWhatsAppExport(request.selectedChats, endDate)
-                .finally(() => processingAutomation = false);
-            sendResponse({ status: 'automation started' });
-            break;
-    }
-    return true;
-});
 
 async function initialize() {
     if (isInitialized || initializationAttempts >= MAX_INIT_ATTEMPTS) return isInitialized;
@@ -269,7 +193,6 @@ async function automateWhatsAppExport(selectedChats, endDate) {
             await new Promise((resolve) => {
                     chrome.runtime.sendMessage({ action: "enforceTabFocus" }, resolve);
                 });
-    
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.CHAT_SELECT));
             simulateClick(chat.clickableElement);
             await waitForElement(SELECTORS.CHAT.messageContainer);
@@ -297,31 +220,342 @@ async function automateWhatsAppExport(selectedChats, endDate) {
     }
 }
 
+// This function will be called after extractChatContentAndMedia completes
+// It takes the fully generated HTML and divides it into monthly segments
+async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
+    // Parse the HTML
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(fullHtml, 'text/html');
+    
+    // Get the time-capsule-container
+    const container = doc.querySelector('#time-capsule-container');
+    if (!container) {
+        log('Could not find container for splitting');
+        return { success: false };
+    }
+    
+    // Helper function to get month name
+    function getMonthName(monthNum) {
+        const months = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        return months[monthNum - 1];
+    }
+    
+    // Find all date elements and messages, excluding the header
+    const allElements = Array.from(container.children).filter((el, index) => {
+        // Skip the nostalgic header which should be the first element
+        return index > 0 || !el.classList.contains('nostalgic-header');
+    });
+    
+    const monthYearGroups = {};
+    let currentMonthYear = null;
+    let currentElements = [];
+    
+    // Group elements by month-year
+    for (let i = 0; i < allElements.length; i++) {
+        const element = allElements[i];
+        // Check if this is a date element
+        const dateText = element.textContent?.trim();
+        
+        if (dateText && /^\d{2}\/\d{2}\/\d{4}$/.test(dateText)) {
+            // This is a date element, extract month and year
+            const [day, month, year] = dateText.split('/').map(Number);
+            const monthYear = `${getMonthName(month)}${year}`;
+            
+            // If we encounter a new month-year, start a new group
+            if (monthYear !== currentMonthYear) {
+                if (currentMonthYear && currentElements.length > 0) {
+                    // Save previous group
+                    monthYearGroups[currentMonthYear] = currentElements;
+                }
+                
+                // Start new group
+                currentMonthYear = monthYear;
+                currentElements = [element];
+            } else {
+                // Add to current group
+                currentElements.push(element);
+            }
+        } else if (currentMonthYear) {
+            // This is a normal message element, add to current group
+            currentElements.push(element);
+        }
+    }
+    
+    // Add the last group
+    if (currentMonthYear && currentElements.length > 0) {
+        monthYearGroups[currentMonthYear] = currentElements;
+    }
+    
+    // Sort month-years chronologically for better organization
+    const monthYears = Object.keys(monthYearGroups).sort((a, b) => {
+        // Extract year and month index for comparison
+        const yearA = parseInt(a.match(/\d{4}$/)[0]);
+        const yearB = parseInt(b.match(/\d{4}$/)[0]);
+        
+        if (yearA !== yearB) return yearA - yearB;
+        
+        // Same year, compare months
+        const monthA = a.replace(/\d{4}$/, '');
+        const monthB = b.replace(/\d{4}$/,'');
+        const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+        return months.indexOf(monthA) - months.indexOf(monthB);
+    });
+    
+    const results = [];
+    
+    // Create a monthly HTML file for each month-year group
+    for (const monthYear of monthYears) {
+        // Create a new document based on the original template
+        const monthDoc = parser.parseFromString(fullHtml, 'text/html');
+        
+        // Get the container
+        const monthContainer = monthDoc.querySelector('#time-capsule-container');
+        
+        // Clear the container while keeping the structure
+        while (monthContainer.firstChild) {
+            monthContainer.removeChild(monthContainer.firstChild);
+        }
+        
+        // Create a new header for this month-year
+        const header = monthDoc.createElement('div');
+        header.className = 'nostalgic-header';
+        header.textContent = chatTitle+' - '+monthYear;
+        
+        // Add the header as the first child of the container
+        monthContainer.appendChild(header);
+        
+        // Add all elements for this month-year
+        const elements = monthYearGroups[monthYear];
+        elements.forEach(element => {
+            monthContainer.appendChild(element.cloneNode(true));
+        });
+        
+        // Create HTML string for this month-year
+        const monthHtml = monthDoc.documentElement.outerHTML;
+        
+        // Save as HTML file
+        const monthBlob = new Blob([monthHtml], { type: 'text/html' });
+        await downloadMedia(monthBlob, `${exportFolder}/${monthYear}.html`);
+        
+        results.push(monthYear);
+        
+        log(`Generated monthly segment: ${monthYear} with ${elements.length} elements`);
+    }
+    
+    return {
+        success: true,
+        monthYears: results,
+        count: monthYears.length
+    };
+}
+
+// Modified version of extractChatContentAndMedia that keeps the original intact
+// and adds the monthly division at the end
 async function extractChatContentAndMedia(chatTitle, endDate) {
     try {
         await scrollChatToTop(endDate);
-        const [mediaContent, messages] = await Promise.all([
-            collectAllMedia(chatTitle, endDate),
-            collectMessages(chatTitle)
-        ]);
-        const messagesBlob = new Blob([messages.content], { type: 'text/plain' });
-        await downloadMedia(messagesBlob, `${chatTitle}/chat.txt`);
-        if (mediaContent.links.size > 0) {
-            const linksContent = Array.from(mediaContent.links).join('\n\n---\n\n');
-            const linksBlob = new Blob([linksContent], { type: 'text/plain' });
-            await downloadMedia(linksBlob, `${chatTitle}/links.txt`);
+        const exportFolder = generateExportFolderName(chatTitle);
+        const messagesContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
+        
+        async function convertImageToBase64(imageElement) {
+            try {
+                const response = await fetch(imageElement.src);
+                const blob = await response.blob();
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const newImg = document.createElement('img');
+                        newImg.src = reader.result;
+                        for (let attr of imageElement.attributes) {
+                            if (attr.name !== 'src') {
+                                newImg.setAttribute(attr.name, attr.value);
+                            }
+                        }
+                        resolve(newImg.outerHTML);
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            } catch (error) {
+                console.error('Image conversion error:', error);
+                return imageElement.outerHTML;
+            }
         }
+        
+        async function processImagesInContainer(container) {
+            const images = container.querySelectorAll('img[src^="blob:"]');
+            const processedImages = await Promise.all(
+                Array.from(images).map(convertImageToBase64)
+            );
+            processedImages.forEach((processedImg, index) => {
+                images[index].outerHTML = processedImg;
+            });
+            return container;
+        }
+        
+        // Process and prepare the container with all images converted to base64
+        const processedContainer = await processImagesInContainer(messagesContainer.cloneNode(true));
+        
+        // Get all styles from the document
+        const capturedStyles = Array.from(document.styleSheets)
+            .map(sheet => {
+                try {
+                    return Array.from(sheet.cssRules)
+                        .map(rule => rule.cssText)
+                        .join('\n');
+                } catch(e) {
+                    return '';
+                }
+            })
+            .join('\n');
+        
+        // Create a container for the nostalgic header
+        const headerHtml = `
+            <div class="nostalgic-header">
+                ${chatTitle} - WhatsApp Memories
+            </div>
+        `;
+        
+        // Create the full HTML export with header INSIDE the container div
+        const fullPageHTML = `<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>${chatTitle}</title>
+            <style>
+                ${capturedStyles}
+                body, html {
+                    margin: 0;
+                    padding: 0;
+                    height: 100%;
+                    overflow: hidden;
+                }
+                .nostalgic-header {
+                    text-align: center;
+                    padding: 15px;
+                    font-size: 24px;
+                    font-weight: bold;
+                    border-bottom: 2px solid #ccc;
+                    margin-bottom: 10px;
+                    position: sticky;
+                    top: 0;
+                    background: #f0f0f0;
+                    z-index: 100;
+                }
+                #time-capsule-container {
+                    height: 100vh;
+                    overflow-y: auto;
+                    position: relative;
+                }
+                /* Audio message styling */
+                .message-in .audio-player, .message-out .audio-player {
+                    border-radius: 7.5px;
+                    display: flex;
+                    align-items: center;
+                    padding: 6px 10px;
+                    position: relative;
+                }
+                .message-in .audio-player {
+                    background-color: #fff;
+                }
+                .message-out .audio-player {
+                    background-color: #dcf8c6;
+                }
+                [data-theme="dark"] .message-in .audio-player {
+                    background-color: #063b28;
+                }
+                [data-theme="dark"] .message-out .audio-player {
+                    background-color: #025d4b;
+                }
+                /* Play button styling */
+                .audio-play-button {
+                    width: 34px;
+                    height: 34px;
+                    border-radius: 50%;
+                    background-color: #fff;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-right: 10px;
+                }
+                /* Audio waveform styling */
+                .audio-waveform {
+                    flex-grow: 1;
+                    height: 25px;
+                    margin: 0 10px;
+                    display: flex;
+                    align-items: center;
+                }
+                .audio-waveform-bar {
+                    background-color: #aaa;
+                    width: 2px;
+                    height: 16px;
+                    margin: 0 1px;
+                    border-radius: 1px;
+                }
+                /* Time counter styling */
+                .audio-time {
+                    font-size: 11px;
+                    color: #8696a0;
+                    margin-right: 5px;
+                    font-weight: 400;
+                }
+                /* Profile picture in audio messages */
+                .audio-player .profile-picture {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 50%;
+                    overflow: hidden;
+                    margin-right: 10px;
+                }
+                /* Ensure images are responsive */
+                #time-capsule-container img {
+                    max-width: 100%;
+                    height: auto;
+                    object-fit: contain;
+                }
+            </style>
+        </head>
+        <body>
+            <div id="time-capsule-container">
+                ${headerHtml}
+                ${processedContainer.innerHTML}
+            </div>
+            <script>
+                window.onload = function() {
+                    document.addEventListener('gesturestart', function (e) {
+                        e.preventDefault();
+                    });
+                }
+            </script>
+        </body>
+        </html>`;
+        
+        // Save the full HTML export in a folder named after the chat
+        const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
+        await downloadMedia(htmlBlob, `${exportFolder}/Complete.html`);
+        
+        // Split the HTML into monthly segments
+        log('Splitting chat into monthly segments...');
+        const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle, exportFolder);
+        
+        // Return the result with monthly information
         return {
             success: true,
             mediaContent: {
-                images: mediaContent.images.length,
-                videos: mediaContent.videos.length,
-                documents: mediaContent.documents.size,
-                links: mediaContent.links.size
+                htmlExport: true,
+                imagesEmbedded: true,
+                monthlySegments: splitResult.success ? splitResult.count : 0
             },
-            totalMessages: messages.count
+            totalMessages: document.querySelectorAll('div.message-in, div.message-out').length,
+            monthYears: splitResult.success ? splitResult.monthYears : []
         };
     } catch (error) {
+        log(`Export error: ${error.message}`);
         throw error;
     }
 }
@@ -329,32 +563,24 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
 async function scrollChatToTop(endDate) {
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
     if (!container) return;
-
     let prevMessageCount = 0;
     let unchangedIterations = 0;
     const targetDate = new Date(endDate);
-
     while (unchangedIterations < 3) {
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
         const currentMessageCount = messages.length;
-
         if (currentMessageCount === prevMessageCount) {
             unchangedIterations++;
         } else {
             unchangedIterations = 0;
             prevMessageCount = currentMessageCount;
         }
-
-        // Look for date headers
         let currentElement = messages[0];
         let dateFound = false;
-
         while (currentElement && !dateFound) {
             let sibling = currentElement.previousElementSibling;
             while (sibling && !dateFound) {
                 const siblingText = sibling.textContent.trim();
-
-                // Check for date in DD/MM/YYYY format
                 if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
                     const [day, month, year] = siblingText.split('/').map(Number);
                     const messageDate = new Date(year, month - 1, day);
@@ -367,13 +593,8 @@ async function scrollChatToTop(endDate) {
             }
             currentElement = currentElement.parentElement;
         }
-
-        // Scroll to the oldest loaded message
         messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-        // Scroll up by an additional amount to load more messages
         container.scrollTop -= 1000;
-
         await new Promise(resolve => setTimeout(resolve, 1000));
     }
 }
@@ -556,6 +777,7 @@ async function collectAllMedia(chatTitle,endDate) {
         links: new Set()
     };
     await scrollChatToTop(endDate);
+    const exportFolder = generateExportFolderName(chatTitle);
     for (const type of Object.keys(mediaContent)) {
         try {
             const items = await scrollAndCollectMedia(type);
@@ -565,14 +787,14 @@ async function collectAllMedia(chatTitle,endDate) {
                         case 'images':
                         case 'videos':
                             const ext = type === 'images' ? '.jpg' : '.mp4';
-                            const filename = `${chatTitle}/${type}/${index + 1}${ext}`;
+                            const filename = `${exportFolder}/${type}/${index + 1}${ext}`;
                             const response = await fetch(item);
                             const blob = await response.blob();
                             await downloadMedia(blob, filename);
                             mediaContent[type].push(item);
                             break; 
                         case 'documents':
-                            const docResult = await processDocument(item, chatTitle, index);
+                            const docResult = await processDocument(item, chatTitle, index, exportFolder);
                             if (docResult) mediaContent.documents.add(docResult);
                             await new Promise(resolve => setTimeout(resolve, 200));
                             break;
@@ -592,10 +814,10 @@ async function collectAllMedia(chatTitle,endDate) {
     return mediaContent;
 }
 
-async function processDocument(button, chatTitle, index) {
+async function processDocument(button, chatTitle, index, exportFolder)  {
     const title = button.getAttribute('title') || '';
     const cleanTitle = title.replace(/\s*\(\d+\)\s*/, '');
-    const filename = `${chatTitle}/documents/${cleanTitle}`;
+    const filename = `${exportFolder}/documents/${cleanTitle}`;
     if (!processedFiles.has(filename)) {
         processedFiles.add(filename);
         await simulateClick(button);
@@ -727,6 +949,38 @@ async function collectMessages(chatTitle) {
         count: processedMessages.length
     };
 }
+
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    switch(request.action) {
+        case "ping":
+            sendResponse({ status: 'ready', initialized: isInitialized });
+            break;
+        case "getChats":
+            sendResponse({ chats: availableChats.map(chat => chat.title) });
+            break;
+        case "checkLoginStatus":
+            sendResponse({ needsLogin: !!document.querySelector('div[data-ref]') });
+            break;
+        case "startAutomation":
+            if (processingAutomation) {
+                sendResponse({ error: 'Automation already in progress' });
+                return true;
+            }
+            if (!isInitialized) {
+                sendResponse({ error: 'Content script not initialized' });
+                return true;
+            }
+            processingAutomation = true;
+            endDate = new Date(request.endDate);
+            automateWhatsAppExport(request.selectedChats, endDate)
+                .finally(() => processingAutomation = false);
+            sendResponse({ status: 'automation started' });
+            break;
+    }
+    return true;
+});
+
 
 log('Content script loaded');
 initialize();
