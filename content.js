@@ -345,33 +345,81 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         </body>
         </html>`;
         
-        const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
-        await downloadMedia(htmlBlob, `${exportFolder}/Complete.html`);
-        
+
         log('Splitting chat into monthly segments...');
         log('Splitting chat into monthly segments...');
 const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle, exportFolder);
 
-const conversionRequests = [
-  {
-    html: fullPageHTML,
-    filename: `${chatTitle}_Complete_Export`
-  },
-  ...splitResult.monthlyHTMLs.map((monthHtml, index) => ({
-    html: monthHtml,
-    filename: `${chatTitle}_${splitResult.monthYears[index]}_Export`
-  }))
-];
+log('Preparing chat HTML for PDF conversion...');
+const preparedHTML = prepareHTMLForPDF(fullPageHTML);
 
-await Promise.all(conversionRequests.map(request =>
-  new Promise((resolve) => {
-    chrome.runtime.sendMessage({
-      action: 'convertHTMLToPDF',
-      html: request.html,
-      chatTitle: request.filename
-    }, resolve);
-  })
-));
+log('Checking if HTML chunking is needed...');
+const htmlChunks = splitHTMLIntoChunks(preparedHTML, 150);
+
+if (htmlChunks.length > 1) {
+  log(`Chat split into ${htmlChunks.length} chunks for better PDF conversion`);
+}
+
+// Prepare conversion requests for all chunks
+const conversionRequests = [];
+
+// Add the complete export if just one chunk
+if (htmlChunks.length === 1) {
+  conversionRequests.push({
+    html: htmlChunks[0],
+    filename: `${chatTitle}_Complete_Export`
+  });
+} else {
+  // Add each chunk with part number
+  htmlChunks.forEach((chunkHtml, index) => {
+    conversionRequests.push({
+      html: chunkHtml,
+      filename: `${chatTitle}_Complete_Export_Part${index+1}`
+    });
+  });
+}
+
+// Add monthly segments
+splitResult.monthlyHTMLs.forEach((monthHtml, index) => {
+  const preparedMonthHtml = prepareHTMLForPDF(monthHtml);
+  conversionRequests.push({
+    html: preparedMonthHtml,
+    filename: `${chatTitle}_${splitResult.monthYears[index]}_Export`
+  });
+});
+
+// Process each conversion request with proper error handling
+const conversionResults = await Promise.all(
+  conversionRequests.map(request => 
+    new Promise((resolve) => {
+      log(`Starting PDF conversion for ${request.filename}...`);
+      chrome.runtime.sendMessage({
+        action: 'convertHTMLToPDF',
+        html: request.html,
+        chatTitle: request.filename
+      }, (response) => {
+        if (response && response.status === 'success') {
+          log(`PDF conversion successful for ${request.filename}`);
+        } else {
+          log(`PDF conversion failed for ${request.filename}: ${response?.error || 'Unknown error'}`);
+        }
+        resolve({
+          filename: request.filename,
+          ...(response || { status: 'error', message: 'No response from conversion' })
+        });
+      });
+    })
+  )
+);
+
+// Check for failed conversions
+const failedConversions = conversionResults.filter(result => result.status !== 'success');
+if (failedConversions.length > 0) {
+  log(`Warning: ${failedConversions.length} PDF conversions failed`);
+  failedConversions.forEach(failure => {
+    log(`- Failed: ${failure.filename}`);
+  });
+}
 
 return {
   success: true,
@@ -481,10 +529,7 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
         
         const monthHtml = monthDoc.documentElement.outerHTML;
         monthlyHTMLs.push(monthHtml);
-        
-        const monthBlob = new Blob([monthHtml], { type: 'text/html' });
-        await downloadMedia(monthBlob, `${exportFolder}/${monthYear}.html`);
-        
+      
         results.push(monthYear);
         log(`Generated monthly segment: ${monthYear} with ${elements.length} elements`);
     }
@@ -892,6 +937,129 @@ async function collectMessages(chatTitle) {
     };
 }
 
+
+function prepareHTMLForPDF(htmlContent) {
+    try {
+      // Add PDF-specific styles without removing existing content
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlContent, 'text/html');
+      
+      // Add print-friendly styles
+      const styleElement = doc.createElement('style');
+      styleElement.textContent = `
+        @media print {
+          body, html {
+            height: auto !important;
+            overflow: visible !important;
+          }
+          #time-capsule-container {
+            height: auto !important;
+            overflow: visible !important;
+          }
+          .nostalgic-header {
+            position: static !important;
+            page-break-after: avoid;
+          }
+          div.message-in, div.message-out {
+            page-break-inside: avoid;
+          }
+        }
+      `;
+      doc.head.appendChild(styleElement);
+      
+      return new XMLSerializer().serializeToString(doc);
+    } catch (error) {
+      log(`HTML preparation error: ${error.message}`);
+      return htmlContent; // Return original if preparation fails
+    }
+}
+
+function splitHTMLIntoChunks(htmlContent, maxMessagesPerChunk = 200) {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlContent, 'text/html');
+      
+      // Find the container with all messages
+      const container = doc.querySelector('#time-capsule-container');
+      if (!container) {
+        return [htmlContent]; // Return original if container not found
+      }
+      
+      // Get the header element
+      const header = container.querySelector('.nostalgic-header');
+      if (!header) {
+        return [htmlContent]; // Return original if header not found
+      }
+      
+      // Count messages
+      const messages = container.querySelectorAll('div.message-in, div.message-out');
+      if (messages.length <= maxMessagesPerChunk) {
+        return [prepareHTMLForPDF(htmlContent)]; // No need to split
+      }
+      
+      // Calculate how many chunks we need
+      const chunkCount = Math.ceil(messages.length / maxMessagesPerChunk);
+      log(`Splitting chat into ${chunkCount} chunks (${messages.length} messages total)`);
+      
+      const chunks = [];
+      for (let i = 0; i < chunkCount; i++) {
+        // Create a new document for this chunk
+        const chunkDoc = parser.parseFromString(htmlContent, 'text/html');
+        const chunkContainer = chunkDoc.querySelector('#time-capsule-container');
+        
+        // Clear the container except for the header
+        while (chunkContainer.firstChild) {
+          chunkContainer.removeChild(chunkContainer.firstChild);
+        }
+        
+        // Clone the header and add to chunk
+        const chunkHeader = header.cloneNode(true);
+        if (chunkCount > 1) {
+          chunkHeader.textContent += ` (Part ${i+1}/${chunkCount})`;
+        }
+        chunkContainer.appendChild(chunkHeader);
+        
+        // Add messages for this chunk
+        const startIdx = i * maxMessagesPerChunk;
+        const endIdx = Math.min((i + 1) * maxMessagesPerChunk, messages.length);
+        
+        // Find the first message of this chunk
+        let firstMessageFound = false;
+        let currentElement = messages[startIdx];
+        
+        // Find the date header for the first message (if any)
+        while (currentElement && !firstMessageFound) {
+          let sibling = currentElement.previousElementSibling;
+          while (sibling) {
+            const siblingText = sibling.textContent?.trim() || '';
+            if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
+              // This is a date header, add it to the chunk
+              chunkContainer.appendChild(sibling.cloneNode(true));
+              firstMessageFound = true;
+              break;
+            }
+            sibling = sibling.previousElementSibling;
+          }
+          if (!firstMessageFound) {
+            currentElement = currentElement.parentElement;
+          }
+        }
+        
+        // Add the messages for this chunk
+        for (let j = startIdx; j < endIdx; j++) {
+          chunkContainer.appendChild(messages[j].cloneNode(true));
+        }
+        
+        // Prepare the chunk for PDF
+        chunks.push(prepareHTMLForPDF(chunkDoc.documentElement.outerHTML));
+      }
+      
+      return chunks;
+    } catch (error) {
+      log(`HTML chunking error: ${error.message}`);
+      return [htmlContent]; // Return original if chunking fails
+    }
+}
 
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     switch(request.action) {

@@ -49,13 +49,15 @@
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self'"
-  },
-  "web_accessible_resources": [{
-    "resources": [
-      "notification.wav",
-      "lib/*",
-      "libs/html2pdf.bundle.min.js"
-    ],
-    "matches": ["<all_urls>"]
-  }]
+},
+"web_accessible_resources": [{
+  "resources": [
+    "notification.wav",
+    "libs/*",
+    "libs/html2pdf.bundle.min.js",
+        "pdf-generator.html"
+  ],
+  "matches": ["https://web.whatsapp.com/*", "<all_urls>"],
+  "use_dynamic_url": true
+}]
 }

@@ -23,114 +23,284 @@ let focusInterval = null;
 let automationActive = false;
 let focusRetryCount = 0;
 const MAX_FOCUS_RETRIES = 3;
-let html2pdf;
+let html2pdf = null;
+let html2pdfLoaded = false;
+let html2pdfLoading = false;
+let pdfConversionQueue = [];
 
 async function loadHTML2PDFLibrary() {
-    return new Promise((resolve, reject) => {
-      // Check if html2pdf is already loaded
-      if (self.html2pdf) {
-        resolve(self.html2pdf);
-        return;
-      }
-  
-      try {
-        // Load the html2pdf library using importScripts
-        self.importScripts(chrome.runtime.getURL('libs/html2pdf.bundle.min.js'));
-  
-        // Check if html2pdf is available after loading
-        if (self.html2pdf) {
-          resolve(self.html2pdf);
-        } else {
-          reject(new Error('html2pdf library failed to load'));
+    if (html2pdfLoaded && html2pdf) {
+      return html2pdf;
+    }
+    if (html2pdfLoading) {
+      return new Promise((resolve, reject) => {
+        const checkInterval = setInterval(() => {
+          if (html2pdfLoaded && html2pdf) {
+            clearInterval(checkInterval);
+            resolve(html2pdf);
+          } else if (!html2pdfLoading && !html2pdfLoaded) {
+            clearInterval(checkInterval);
+            reject(new Error('HTML2PDF library failed to load'));
+          }
+        }, 100);
+      });
+    }
+    html2pdfLoading = true;
+    try {
+      log('Loading HTML2PDF library...');
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          html2pdfLoading = false;
+          reject(new Error('HTML2PDF library load timeout'));
+        }, 10000);
+        try {
+          self.importScripts(chrome.runtime.getURL('libs/html2pdf.bundle.min.js'));
+          if (typeof self.html2pdf === 'function') {
+            clearTimeout(timeout);
+            html2pdf = self.html2pdf;
+            html2pdfLoaded = true;
+            html2pdfLoading = false;
+            log('HTML2PDF library loaded successfully');
+            resolve(html2pdf);
+          } else {
+            clearTimeout(timeout);
+            html2pdfLoading = false;
+            const error = new Error('HTML2PDF library failed to initialize correctly');
+            log(error.message);
+            reject(error);
+          }
+        } catch (error) {
+          clearTimeout(timeout);
+          html2pdfLoading = false;
+          log(`Failed to load HTML2PDF library: ${error.message}`);
+          reject(error);
         }
-      } catch (error) {
-        reject(new Error(`Failed to load html2pdf library: ${error.message}`));
-      }
-    });
+      });
+    } catch (error) {
+      html2pdfLoading = false;
+      log(`HTML2PDF library load error: ${error.message}`);
+      throw error;
+    }
+}
+
+
+async function processPDFQueue() {
+    if (pdfConversionQueue.length === 0) return;
+    
+    // Take the first item from the queue
+    const task = pdfConversionQueue.shift();
+    
+    try {
+      // Try to convert it
+      await performHTMLToPDFConversion(task.html, task.chatTitle, task.resolver, task.rejecter);
+    } catch (error) {
+      // If error, reject the promise
+      task.rejecter(error);
+    }
+    
+    // Process the next item in the queue
+    if (pdfConversionQueue.length > 0) {
+      setTimeout(processPDFQueue, 1000);
+    }
   }
 
-// Chunk-based PDF conversion for large files
-async function convertHTMLToPDF(html, chatTitle) {
-  // Ensure library is loaded
-  if (!html2pdf) {
-    await loadHTML2PDFLibrary();
-  }
-
-  try {
+async function performHTMLToPDFConversion(html, chatTitle, resolve, reject) {
     // Create a unique processing ID
     const processingId = `pdf_${Date.now()}`;
-
-    // Send initial progress
-    chrome.runtime.sendMessage({
-      action: 'pdfConversionProgress',
-      progress: 10,
-      processingId,
-      message: 'Starting PDF conversion'
-    });
-
-    // Convert HTML to PDF
-    const pdfBlob = await new Promise((resolve, reject) => {
+    
+    // Initial progress notification
+    sendProgressNotification(10, processingId, 'Starting PDF conversion');
+    
+    try {
+      // Ensure library is loaded
+      if (!html2pdfLoaded || !html2pdf) {
+        try {
+          html2pdf = await loadHTML2PDFLibrary();
+        } catch (libraryError) {
+          sendErrorNotification(processingId, `Failed to load PDF library: ${libraryError.message}`);
+          reject(libraryError);
+          return;
+        }
+      }
+      
+      // Sanitize the filename
+      const sanitizedTitle = chatTitle.replace(/[^a-z0-9_\-]/gi, '_');
+      const filename = `WhatsApp_${sanitizedTitle}_Export_${new Date().toISOString().replace(/:/g, '-')}.pdf`;
+      
+      sendProgressNotification(20, processingId, 'Processing HTML content');
+      
+      // Check HTML size and warn if it's very large
+      const htmlSize = new Blob([html]).size / (1024 * 1024); // Size in MB
+      if (htmlSize > 10) {
+        sendProgressNotification(25, processingId, `Large document (${htmlSize.toFixed(2)}MB), conversion may take some time`);
+      }
+      
+      // Configure html2pdf options
+      const options = {
+        margin: 1,
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { 
+          scale: 1.5,
+          logging: false,
+          useCORS: true,
+          letterRendering: true
+        },
+        jsPDF: { 
+          unit: 'in', 
+          format: 'letter', 
+          orientation: 'portrait',
+          compress: true
+        }
+      };
+      
+      sendProgressNotification(40, processingId, 'Generating PDF');
+      
+      // Start the conversion process with chunking for large documents
       try {
-        html2pdf()
-          .set({
-            margin: 1,
-            filename: `WhatsApp_${chatTitle}_Export`,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { 
-              scale: 2,
-              logging: false,
-              useCORS: true
-            },
-            jsPDF: { 
-              unit: 'in', 
-              format: 'letter', 
-              orientation: 'portrait' 
+        // Convert HTML to PDF
+        const pdfBlob = await new Promise((resolveBlob, rejectBlob) => {
+          setTimeout(() => {
+            try {
+              html2pdf()
+                .set(options)
+                .from(html)
+                .outputPdf('blob')
+                .then(blob => {
+                  sendProgressNotification(80, processingId, 'PDF generated successfully');
+                  resolveBlob(blob);
+                })
+                .catch(error => {
+                  log(`PDF generation error: ${error.message}`);
+                  rejectBlob(error);
+                });
+            } catch (error) {
+              log(`PDF setup error: ${error.message}`);
+              rejectBlob(error);
             }
-          })
-          .from(html)
-          .outputPdf('blob')
-          .then(resolve)
-          .catch(reject);
+          }, 500); // Small delay to allow UI updates
+        });
+        
+        sendProgressNotification(90, processingId, 'Preparing download');
+        
+        // Download the PDF
+        chrome.downloads.download({
+          url: URL.createObjectURL(pdfBlob),
+          filename: filename,
+          saveAs: true
+        }, downloadId => {
+          if (chrome.runtime.lastError) {
+            throw new Error(`Download error: ${chrome.runtime.lastError.message}`);
+          }
+          
+          sendProgressNotification(100, processingId, 'PDF downloaded successfully');
+          resolve({ 
+            status: 'success', 
+            processingId,
+            filename: filename 
+          });
+        });
       } catch (conversionError) {
+        sendErrorNotification(processingId, `PDF conversion failed: ${conversionError.message}`);
         reject(conversionError);
       }
-    });
+    } catch (error) {
+      sendErrorNotification(processingId, `PDF error: ${error.message}`);
+      reject(error);
+    }
+}
 
-    // Send progress update
+async function convertHTMLToPDF(html, chatTitle) {
+    try {
+      // Create a unique processing ID
+      const processingId = `pdf_${Date.now()}`;
+      
+      // Initial progress notification
+      chrome.runtime.sendMessage({
+        action: 'pdfConversionProgress',
+        progress: 10,
+        processingId,
+        message: 'Starting PDF conversion...'
+      }).catch(() => {});
+      
+      // Create a tab with the PDF generator page
+      return new Promise((resolve, reject) => {
+        // Create tab with the generator page
+        chrome.tabs.create({
+          url: chrome.runtime.getURL('pdf-generator.html'),
+          active: false
+        }, (tab) => {
+          // Wait for the page to load
+          chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+            if (tabId === tab.id && info.status === 'complete') {
+              // Remove the listener
+              chrome.tabs.onUpdated.removeListener(listener);
+              
+              // Wait a moment for scripts to initialize
+              setTimeout(() => {
+                // Send the HTML to the page for processing
+                chrome.tabs.sendMessage(tab.id, {
+                  action: 'generatePDF',
+                  html: html,
+                  filename: chatTitle
+                }, (response) => {
+                  // Close the tab
+                  chrome.tabs.remove(tab.id);
+                  
+                  if (response && response.status === 'success') {
+                    resolve({
+                      status: 'success',
+                      processingId,
+                      filename: response.filename
+                    });
+                  } else {
+                    reject(new Error(response?.message || 'PDF generation failed'));
+                  }
+                });
+              }, 500);
+            }
+          });
+        });
+      });
+    } catch (error) {
+      log(`PDF conversion error: ${error.message}`);
+      
+      chrome.runtime.sendMessage({
+        action: 'pdfConversionError',
+        processingId,
+        error: error.message
+      }).catch(() => {});
+      
+      return {
+        status: 'error',
+        message: error.message
+      };
+    }
+  }
+
+function sendProgressNotification(progress, processingId, message) {
     chrome.runtime.sendMessage({
       action: 'pdfConversionProgress',
-      progress: 90,
-      processingId,
-      message: 'PDF conversion complete'
-    });
-
-    // Download the PDF
-    const filename = `WhatsApp_${chatTitle}_Export_${new Date().toISOString().replace(/:/g, '-')}.pdf`;
-    chrome.downloads.download({
-      url: URL.createObjectURL(pdfBlob),
-      filename: filename,
-      saveAs: true
-    });
-
-    // Final progress
-    chrome.runtime.sendMessage({
-      action: 'pdfConversionProgress',
-      progress: 100,
-      processingId,
-      message: 'PDF downloaded successfully'
-    });
-
-    return { status: 'success', processingId };
-  } catch (error) {
-    // Error handling
-    chrome.runtime.sendMessage({
-      action: 'pdfConversionError',
-      error: error.message,
-      processingId
+      progress: progress,
+      processingId: processingId,
+      message: message
+    }).catch(() => {
+      // Silent catch - UI might not be listening
     });
     
-    throw error;
+    log(`PDF Conversion (${processingId}): ${progress}% - ${message}`);
   }
+
+function sendErrorNotification(processingId, errorMessage) {
+    chrome.runtime.sendMessage({
+      action: 'pdfConversionError',
+      processingId: processingId,
+      error: errorMessage
+    }).catch(() => {
+      // Silent catch - UI might not be listening
+    });
+    
+    log(`PDF Conversion Error (${processingId}): ${errorMessage}`);
 }
 
 async function enforceWhatsAppTabFocus() {
@@ -606,5 +776,12 @@ chrome.runtime.onConnect.addListener((port) => {
     }
 });
 
-loadHTML2PDFLibrary().catch(console.error);
+// Replace with:
+loadHTML2PDFLibrary()
+  .then(() => {
+    log('HTML2PDF library pre-loaded successfully');
+  })
+  .catch(error => {
+    log(`HTML2PDF library pre-load failed: ${error.message}`);
+  });
 log('Background script loaded');
