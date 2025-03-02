@@ -514,75 +514,555 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
     }
 }
 
-async function scrollChatToTop(endDate) {
-    const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
-    if (!container) {
-        log("Chat scroll container not found");
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        return;
-    }
-    let prevMessageCount = 0;
-    let unchangedIterations = 0;
-    const targetDate = new Date(endDate);
-    while (unchangedIterations < 3) {
-        const loadOlderButtons = document.querySelectorAll('button.x14m1o6m, button.x1b9z3ur');
-        for (const button of loadOlderButtons) {
-            if (button.textContent.includes("Click here to get older messages")) {
-                log("Found 'Load older messages' button, clicking it...");
-                simulateClick(button);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                unchangedIterations = 0;
-                break;
-            }
-        }
-        const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
-        if (!messages || messages.length === 0) {
-            log("No messages found in chat");
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            return;
-        }
-        const currentMessageCount = messages.length;
-        if (currentMessageCount === prevMessageCount) {
-            unchangedIterations++;
-        } else {
-            unchangedIterations = 0;
-            prevMessageCount = currentMessageCount;
-        }
-        let currentElement = messages[0];
-        if (!currentElement) {
-            log("First message element not found");
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            continue;
-        }
-        let dateFound = false;
-        while (currentElement && !dateFound) {
-            let sibling = currentElement.previousElementSibling;
-            while (sibling && !dateFound) {
-                const siblingText = sibling.textContent?.trim() || "";
-                if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
-                    const [day, month, year] = siblingText.split('/').map(Number);
-                    const messageDate = new Date(year, month - 1, day);
-                    if (messageDate < targetDate) {
-                        return;
-                    }
-                    dateFound = true;
-                }
-                sibling = sibling.previousElementSibling;
-            }
-            currentElement = currentElement.parentElement;
-        }
+
+
+// Add an additional scroll recovery function
+async function forceUnstickScroll(container, chatTitle) {
+    log("Attempting to force unstick scrolling");
+    
+    // Method 1: Try toggling scroll behavior
+    container.style.scrollBehavior = 'auto';
+    await new Promise(resolve => setTimeout(resolve, 200));
+    container.style.scrollBehavior = 'smooth';
+    container.scrollTop = 0;
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Method 2: Try clicking several positions in the container
+    const clickPositions = [0.1, 0.3, 0.5, 0.7, 0.9]; // Relative positions (0-1)
+    for (const relPos of clickPositions) {
         try {
-            if (messages[0]) {
-                messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                if (container.scrollTop > 1000) {
-                    container.scrollTop -= 1000;
-                }
-            }
-        } catch (scrollError) {
-            log(`Scroll error: ${scrollError.message}`);
+            const rect = container.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height * relPos;
+            
+            container.dispatchEvent(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: x,
+                clientY: y
+            }));
+            
+            await new Promise(resolve => setTimeout(resolve, 300));
+        } catch (e) {
+            // Continue if one click fails
         }
+    }
+    
+    // Method 3: Try to trigger content reload by changing container size
+    const originalHeight = container.style.height;
+    const originalWidth = container.style.width;
+    
+    container.style.height = '99%';
+    container.style.width = '99%';
+    await new Promise(resolve => setTimeout(resolve, 500));
+    container.style.height = originalHeight;
+    container.style.width = originalWidth;
+    
+    // Method 4: Try programmatically loading older messages
+    const loadOlderButtons = document.querySelectorAll('button.x14m1o6m, button.x1b9z3ur');
+    for (const button of loadOlderButtons) {
+        simulateClick(button);
         await new Promise(resolve => setTimeout(resolve, 1000));
     }
+    
+    // Reset scroll position to top
+    container.scrollTop = 0;
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    log("Force unstick attempts completed");
+    return true;
+}
+
+// Configuration constants (add these to your existing TIMEOUTS or create a new section)
+const SCROLL_CONFIG = {
+    MAX_CONSECUTIVE_FAILURES: 3,
+    MAX_TOTAL_FAILURES: 15,
+    SCROLL_BATCH_SIZE: 30,    // How many messages to try to load before pausing
+    SCROLL_BATCH_PAUSE: 2000, // Pause between batches to let the UI respond
+    DATE_CHECK_INTERVAL: 10   // How often to log the oldest date
+  };
+  
+  // Enhanced scrollChatToTop function - keeps the original name
+  async function scrollChatToTop(endDate) {
+      const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
+      if (!container) {
+          log("Chat scroll container not found");
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          return;
+      }
+      
+      let prevMessageCount = 0;
+      let unchangedIterations = 0;
+      let consecutiveScrollFailures = 0;
+      let totalScrollFailures = 0;
+      let scrollAttempts = 0;
+      let recoveryLevel = 0;
+      let dateCheckCounter = 0;
+      let lastOldestDate = null;
+      
+      const targetDate = new Date(endDate);
+      
+      log("Starting to scroll to target date: " + endDate);
+      
+      // Store the original chat state to be able to return to it
+      const originalChatTitle = document.querySelector('header span[dir="auto"]')?.textContent?.trim();
+      
+      while (scrollAttempts < 200 && unchangedIterations < 5) {
+          scrollAttempts++;
+          
+          // Periodically log progress with dates
+          if (++dateCheckCounter % SCROLL_CONFIG.DATE_CHECK_INTERVAL === 0) {
+              const oldestDate = await findOldestVisibleDate();
+              if (oldestDate) {
+                  log(`Scrolling attempt ${scrollAttempts}/200. Oldest date seen: ${oldestDate.toDateString()}`);
+                  lastOldestDate = oldestDate;
+                  
+                  // Check if we've reached target date
+                  if (oldestDate < targetDate) {
+                      log(`Reached target date: ${oldestDate.toDateString()} is before ${targetDate.toDateString()}`);
+                      return;
+                  }
+              }
+          }
+          
+          // Check for and click "Load older messages" button
+          const loadOlderButtons = document.querySelectorAll('button.x14m1o6m, button.x1b9z3ur');
+          let buttonFound = false;
+          for (const button of loadOlderButtons) {
+              if (button.textContent.includes("Click here to get older messages")) {
+                  log("Found 'Load older messages' button, clicking it...");
+                  simulateClick(button);
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  unchangedIterations = 0;
+                  consecutiveScrollFailures = 0;
+                  buttonFound = true;
+                  break;
+              }
+          }
+          
+          // Pause periodically to let the DOM catch up (reduces chance of getting stuck)
+          if (scrollAttempts % SCROLL_CONFIG.SCROLL_BATCH_SIZE === 0) {
+              log(`Batch pause at attempt ${scrollAttempts} to let the UI respond`);
+              await new Promise(resolve => setTimeout(resolve, SCROLL_CONFIG.SCROLL_BATCH_PAUSE));
+          }
+          
+          // Get current messages
+          const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+          if (!messages || messages.length === 0) {
+              log("No messages found in chat");
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              continue;
+          }
+          
+          // Check if we're making progress loading more messages
+          const currentMessageCount = messages.length;
+          if (currentMessageCount > prevMessageCount) {
+              // We've made progress, reset failure counters
+              log(`Progress: loaded ${currentMessageCount} messages`);
+              unchangedIterations = 0;
+              consecutiveScrollFailures = 0;
+              prevMessageCount = currentMessageCount;
+          } else {
+              // No new messages loaded
+              unchangedIterations++;
+              log(`No new messages loaded (${unchangedIterations}/5 attempts)`);
+              
+              // Only count as a scroll failure if we haven't found a button
+              if (!buttonFound) {
+                  consecutiveScrollFailures++;
+                  totalScrollFailures++;
+                  log(`Scroll appears stuck: ${consecutiveScrollFailures}/${SCROLL_CONFIG.MAX_CONSECUTIVE_FAILURES} failures`);
+              }
+          }
+          
+          // Try to scroll using the most appropriate method based on failure count
+          try {
+              if (messages[0]) {
+                  if (consecutiveScrollFailures === 0) {
+                      // Normal scroll - use different approaches in rotation to avoid getting stuck
+                      const scrollVariation = scrollAttempts % 4;
+                      
+                      if (scrollVariation === 0) {
+                          // Standard smooth scroll
+                          messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          await new Promise(resolve => setTimeout(resolve, 300));
+                          if (container.scrollTop > 1000) {
+                              container.scrollTop -= 1000;
+                          }
+                      } else if (scrollVariation === 1) {
+                          // Direct position adjustment
+                          container.scrollTop = 0;
+                          await new Promise(resolve => setTimeout(resolve, 300));
+                      } else if (scrollVariation === 2) {
+                          // Auto scroll
+                          messages[0].scrollIntoView({ block: 'start' });
+                          await new Promise(resolve => setTimeout(resolve, 300));
+                      } else {
+                          // Jump scroll with more distance
+                          messages[0].scrollIntoView({ behavior: 'auto', block: 'center' });
+                          await new Promise(resolve => setTimeout(resolve, 300));
+                          container.scrollTop = 0;
+                      }
+                  } else if (consecutiveScrollFailures <= SCROLL_CONFIG.MAX_CONSECUTIVE_FAILURES) {
+                      // Try recovery measures based on failure level
+                      log(`Using alternative scrolling method (attempt ${consecutiveScrollFailures})`);
+                      
+                      if (consecutiveScrollFailures === 1) {
+                          // Method 1: Try scrolling with a different behavior
+                          messages[0].scrollIntoView({ block: 'start' });
+                          await new Promise(resolve => setTimeout(resolve, 500));
+                          container.scrollTop -= 1500; // Scroll up more aggressively
+                      } else if (consecutiveScrollFailures === 2) {
+                          // Method 2: Try clicking near the top to activate the area
+                          log("Clicking near the top to activate scrolling");
+                          const topArea = messages[0];
+                          if (topArea) {
+                              simulateClick(topArea);
+                              await new Promise(resolve => setTimeout(resolve, 500));
+                          }
+                          container.scrollTop = 0; // Force scroll to top
+                          await new Promise(resolve => setTimeout(resolve, 500));
+                      } else {
+                          // Method 3: Try more aggressive DOM manipulation
+                          log("Using DOM manipulation to unstick scrolling");
+                          // Temporarily change styling to force layout recalculation
+                          const originalHeight = container.style.height;
+                          const originalOverflow = container.style.overflow;
+                          
+                          container.style.height = '99%';
+                          container.style.overflow = 'hidden';
+                          await new Promise(resolve => setTimeout(resolve, 300));
+                          container.style.height = originalHeight;
+                          container.style.overflow = originalOverflow;
+                          await new Promise(resolve => setTimeout(resolve, 300));
+                          
+                          container.scrollTop = 0;
+                      }
+                  } else {
+                      // Major recovery needed - try to reset the view
+                      log("Too many scroll failures, applying emergency scroll reset");
+                      
+                      // Try to force a chat reset if possible
+                      const resetSuccessful = await attemptChatReset(originalChatTitle);
+                      
+                      if (!resetSuccessful) {
+                          // Apply random scrolling to try to unstick
+                          for (let i = 0; i < 5; i++) {
+                              const randomScroll = Math.floor(Math.random() * 1000);
+                              container.scrollTop = randomScroll;
+                              await new Promise(resolve => setTimeout(resolve, 200));
+                          }
+                          
+                          // Reset to top
+                          container.scrollTop = 0;
+                          await new Promise(resolve => setTimeout(resolve, 1000));
+                      }
+                      
+                      // Reset failure counter
+                      consecutiveScrollFailures = 1;
+                  }
+              }
+          } catch (scrollError) {
+              log(`Scroll error: ${scrollError.message}`);
+              consecutiveScrollFailures++;
+              totalScrollFailures++;
+          }
+          
+          // Add random delay to avoid predictable patterns that might get stuck
+          const randomDelay = Math.floor(Math.random() * 500) + 500;
+          await new Promise(resolve => setTimeout(resolve, randomDelay));
+          
+          // Emergency exit if too many total failures
+          if (totalScrollFailures > SCROLL_CONFIG.MAX_TOTAL_FAILURES) {
+              log(`Reached maximum total failures (${totalScrollFailures}), applying last resort recovery`);
+              await applyLastResortRecovery(container);
+              totalScrollFailures = 0; // Reset to give it another chance
+          }
+      }
+      
+      if (scrollAttempts >= 200) {
+          log(`Reached maximum scroll attempts (200), continuing with available messages`);
+      } else {
+          log(`Stopped scrolling after ${scrollAttempts} attempts due to no message count changes`);
+      }
+  }
+  
+  // Find the oldest visible date in the chat
+  async function findOldestVisibleDate() {
+      const dateElements = document.querySelectorAll('[data-id], div[role="row"] > div:first-child');
+      
+      for (const element of dateElements) {
+          const text = element.textContent?.trim();
+          if (text && /^\d{2}\/\d{2}\/\d{4}$/.test(text)) {
+              const [day, month, year] = text.split('/').map(Number);
+              return new Date(year, month - 1, day);
+          }
+      }
+      
+      // Alternative date format check (for different regional settings)
+      const alternativeElements = document.querySelectorAll('div[data-pre-plain-text]');
+      for (const element of alternativeElements) {
+          const prePlainText = element.getAttribute('data-pre-plain-text') || '';
+          const dateMatch = prePlainText.match(/\[(\d{2})\/(\d{2})\/(\d{4})/);
+          if (dateMatch) {
+              const [_, day, month, year] = dateMatch;
+              return new Date(Number(year), Number(month) - 1, Number(day));
+          }
+      }
+      
+      return null;
+  }
+  
+  // Try to reset the chat view by navigating away and back
+  async function attemptChatReset(chatTitle) {
+      if (!chatTitle) {
+          log("Can't reset chat - no chat title found");
+          return false;
+      }
+      
+      log(`Attempting to reset chat view for: ${chatTitle}`);
+      
+      try {
+          // Step 1: Check if there's a back button
+          const headerBackButton = document.querySelector('[data-icon="back"], [aria-label="Back"]');
+          if (headerBackButton) {
+              // Go back to chat list
+              log("Clicking back button to return to chat list");
+              simulateClick(headerBackButton);
+              await new Promise(resolve => setTimeout(resolve, 1500));
+              
+              // Step 2: Find and click our original chat
+              const chatList = document.querySelector(SELECTORS.CHAT_LIST.container);
+              if (chatList) {
+                  const chatItems = chatList.querySelectorAll(SELECTORS.CHAT_LIST.messages);
+                  let foundChat = null;
+                  
+                  // Look for our chat by title
+                  for (const chat of chatItems) {
+                      const titleElement = chat.querySelector(SELECTORS.CHAT.title);
+                      const chatTitle = titleElement?.textContent || titleElement?.getAttribute('title');
+                      
+                      if (chatTitle && chatTitle.includes(chatTitle)) {
+                          foundChat = chat;
+                          break;
+                      }
+                  }
+                  
+                  if (foundChat) {
+                      log(`Found original chat, clicking to reopen`);
+                      simulateClick(foundChat);
+                      await new Promise(resolve => setTimeout(resolve, 2000));
+                      
+                      // Wait for chat to load
+                      try {
+                          await waitForElement(SELECTORS.CHAT.messageContainer, 5000);
+                          log("Successfully reset chat view");
+                          return true;
+                      } catch (e) {
+                          log("Chat loaded but message container not found");
+                      }
+                  } else {
+                      log(`Could not find original chat ${chatTitle} in chat list`);
+                  }
+              } else {
+                  log("Could not find chat list after clicking back");
+              }
+          } else {
+              // Alternative method: try to force refresh through DOM manipulation
+              log("No back button found, trying alternative reset");
+              const appWrapper = document.querySelector('#app, .app-wrapper-web');
+              if (appWrapper) {
+                  // Force a repaint
+                  appWrapper.style.opacity = '0.99';
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                  appWrapper.style.opacity = '1';
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  
+                  return true;
+              }
+          }
+      } catch (error) {
+          log(`Reset chat view error: ${error.message}`);
+      }
+      
+      return false;
+  }
+  
+  // Last resort recovery for extreme cases
+  async function applyLastResortRecovery(container) {
+      log("Applying last resort recovery techniques");
+      
+      try {
+          // Method 1: Aggressive DOM manipulation
+          if (container) {
+              // Force the browser to completely recalculate the layout
+              container.style.display = 'none';
+              await new Promise(resolve => setTimeout(resolve, 500));
+              container.style.display = '';
+              await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          
+          // Method 2: Try to reload some components
+          const appComponent = document.querySelector('#app');
+          if (appComponent) {
+              appComponent.classList.add('temp-recovery-class');
+              await new Promise(resolve => setTimeout(resolve, 500));
+              appComponent.classList.remove('temp-recovery-class');
+          }
+          
+          // Method 3: Simulate a zoom change to force redrawing
+          const originalZoom = document.body.style.zoom;
+          document.body.style.zoom = '99%';
+          await new Promise(resolve => setTimeout(resolve, 500));
+          document.body.style.zoom = originalZoom || '100%';
+          
+          // Method 4: Create and trigger JavaScript UI events
+          document.dispatchEvent(new Event('resize'));
+          window.dispatchEvent(new Event('resize'));
+          
+          // Method 5: Random interactions to break patterns
+          if (container) {
+              // Try random clicks at different positions
+              for (let i = 0; i < 3; i++) {
+                  const rect = container.getBoundingClientRect();
+                  const x = rect.left + Math.random() * rect.width;
+                  const y = rect.top + Math.random() * rect.height;
+                  
+                  container.dispatchEvent(new MouseEvent('mousedown', {
+                      bubbles: true, cancelable: true, view: window,
+                      clientX: x, clientY: y
+                  }));
+                  
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                  
+                  container.dispatchEvent(new MouseEvent('mouseup', {
+                      bubbles: true, cancelable: true, view: window,
+                      clientX: x, clientY: y
+                  }));
+                  
+                  await new Promise(resolve => setTimeout(resolve, 100));
+              }
+          }
+          
+          // Finally, reset scroll position
+          if (container) {
+              container.scrollTop = 0;
+          }
+          
+          log("Last resort recovery completed");
+          return true;
+      } catch (error) {
+          log(`Last resort recovery error: ${error.message}`);
+          return false;
+      }
+  }
+  
+  // Enhanced version of scrollAndCollectMedia that handles stuck scrolling better
+  async function scrollAndCollectMedia(type) {
+      const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
+      if (!container) throw new Error('No scroll container');
+      
+      const mediaItems = new Map();
+      let lastHeight = container.scrollHeight;
+      let unchangedCount = 0;
+      let stuckCount = 0;
+      
+      const collectCurrentView = () => {
+          const selector = SELECTORS.MEDIA_ELEMENTS[type];
+          document.querySelectorAll(selector).forEach(el => {
+              if (type === 'documents') {
+                  const button = el.closest('[role="button"][title*="Download"]') || el;
+                  if (button) {
+                      const title = button.getAttribute('title') || '';
+                      const uniqueId = title.replace(/\s*\(\d+\)\s*/, '').trim();
+                      if (!mediaItems.has(uniqueId)) {
+                          mediaItems.set(uniqueId, button);
+                      }
+                  }
+              } else if (type === 'links') {
+                  const url = el.href || el.getAttribute('data-url');
+                  if (url?.startsWith('http')) mediaItems.set(url, url);
+              } else {
+                  const url = el.src || el.style.backgroundImage?.match(/url\("(.+)"\)/)?.[1];
+                  if (url?.startsWith('blob:')) mediaItems.set(url, url);
+              }
+          });
+      };
+      
+      container.scrollTop = 0;
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      for (let i = 0; i < 50 && unchangedCount < 5; i++) {
+          // Collect media from current view
+          collectCurrentView();
+          
+          // Save current scroll position
+          const previousScrollTop = container.scrollTop;
+          
+          // Try to scroll down using different methods to avoid getting stuck
+          if (i % 3 === 0) {
+              container.scrollTop += 500;
+          } else if (i % 3 === 1) {
+              const elements = container.querySelectorAll('*');
+              const targetElement = elements[Math.min(elements.length - 1, (i * 50) + 100)];
+              if (targetElement) {
+                  targetElement.scrollIntoView({ behavior: 'smooth' });
+              } else {
+                  container.scrollTop += 500;
+              }
+          } else {
+              container.scrollBy({ top: 500, behavior: 'smooth' });
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          // Check if scroll actually changed
+          if (Math.abs(container.scrollTop - previousScrollTop) < 10) {
+              stuckCount++;
+              log(`Media scroll appears stuck, attempt ${stuckCount}/3 to recover`);
+              
+              if (stuckCount >= 3) {
+                  // Try unsticking
+                  try {
+                      // Force UI update
+                      container.style.overflow = 'hidden';
+                      await new Promise(resolve => setTimeout(resolve, 200));
+                      container.style.overflow = '';
+                      
+                      // Try scrolling to a random position
+                      const randomPosition = Math.floor(Math.random() * 1000);
+                      container.scrollTop = randomPosition;
+                      
+                      await new Promise(resolve => setTimeout(resolve, 500));
+                  } catch (e) {
+                      log(`Error in unsticking media scroll: ${e.message}`);
+                  }
+                  
+                  stuckCount = 0; // Reset stuck counter after recovery attempt
+              }
+          } else {
+              stuckCount = 0; // Reset stuck counter when it scrolls normally
+          }
+          
+          // Check if content height changed (loaded more content)
+          const currentHeight = container.scrollHeight;
+          if (Math.abs(currentHeight - lastHeight) < 10) {
+              unchangedCount++;
+              log(`Media collection - no new content: ${unchangedCount}/5`);
+          } else {
+              unchangedCount = 0;
+              lastHeight = currentHeight;
+          }
+          
+          // Periodically pause to let UI catch up
+          if (i % 10 === 9) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+      }
+      
+      log(`Collected ${mediaItems.size} items of type ${type}`);
+      return Array.from(type === 'documents' ? mediaItems.values() : mediaItems.keys());
 }
 
 async function getMessageDate(message) {
@@ -695,49 +1175,7 @@ const getChatsList = async () => {
         .filter(chat => chat !== null);
 };
 
-async function scrollAndCollectMedia(type) {
-    const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
-    if (!container) throw new Error('No scroll container');
-    const mediaItems = new Map();
-    let lastHeight = container.scrollHeight;
-    let unchangedCount = 0;
-    const collectCurrentView = () => {
-        const selector = SELECTORS.MEDIA_ELEMENTS[type];
-        document.querySelectorAll(selector).forEach(el => {
-            if (type === 'documents') {
-                const button = el.closest('[role="button"][title*="Download"]') || el;
-                if (button) {
-                    const title = button.getAttribute('title') || '';
-                    const uniqueId = title.replace(/\s*\(\d+\)\s*/, '').trim();
-                    if (!mediaItems.has(uniqueId)) {
-                        mediaItems.set(uniqueId, button);
-                    }
-                }
-            } else if (type === 'links') {
-                const url = el.href || el.getAttribute('data-url');
-                if (url?.startsWith('http')) mediaItems.set(url, url);
-            } else {
-                const url = el.src || el.style.backgroundImage?.match(/url\("(.+)"\)/)?.[1];
-                if (url?.startsWith('blob:')) mediaItems.set(url, url);
-            }
-        });
-    };
-    container.scrollTop = 0;
-    await new Promise(resolve => setTimeout(resolve, 500));
-    for (let i = 0; i < 50 && unchangedCount < 5; i++) {
-        collectCurrentView();
-        container.scrollTop += 500;
-        await new Promise(resolve => setTimeout(resolve, 300));
-        const currentHeight = container.scrollHeight;
-        if (Math.abs(currentHeight - lastHeight) < 10) {
-            unchangedCount++;
-        } else {
-            unchangedCount = 0;
-            lastHeight = currentHeight;
-        }
-    }
-    return Array.from(type === 'documents' ? mediaItems.values() : mediaItems.keys());
-}
+
 
 async function collectAllMedia(chatTitle,endDate) {
     const mediaContent = {
