@@ -160,32 +160,79 @@ function setDefaultDateValues(dateSelection) {
     }
 }
 
-function setupDateSelectionListeners(dateSelection) {
+function showPhoneRequirementDisclaimer(selectedTimeRange) {
+    if (selectedTimeRange !== '6month' && selectedTimeRange !== 'year') {
+      return Promise.resolve(true);
+    }
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.top = '0';
+      overlay.style.left = '0';
+      overlay.style.width = '100%';
+      overlay.style.height = '100%';
+      overlay.style.backgroundColor = 'rgba(0,0,0,0.7)';
+      overlay.style.zIndex = '9999';
+      overlay.style.display = 'flex';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      const box = document.createElement('div');
+      box.style.backgroundColor = 'white';
+      box.style.padding = '20px';
+      box.style.borderRadius = '8px';
+      box.style.maxWidth = '400px';
+      box.style.textAlign = 'left';
+      box.innerHTML = `
+        <h3 style="color:#075E54;margin-top:0;font-size:18px">⚠️ Keep WhatsApp Open on Your Phone</h3>
+        <div style="text-align:right;margin-top:20px">
+          <button id="cancel-disclaimer" style="background:#f1f1f1;border:none;padding:10px 18px;margin-right:10px;border-radius:4px;cursor:pointer;font-size:16px">Cancel</button>
+          <button id="confirm-disclaimer" style="background:#128C7E;color:white;border:none;padding:10px 18px;border-radius:4px;cursor:pointer;font-size:16px">I Understand</button>
+        </div>
+      `;
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      document.getElementById('cancel-disclaimer').addEventListener('click', () => {
+        document.body.removeChild(overlay);
+        resolve(false);
+      });
+      document.getElementById('confirm-disclaimer').addEventListener('click', () => {
+        document.body.removeChild(overlay);
+        resolve(true);
+      });
+    });
+}
+
+  function setupDateSelectionListeners(dateSelection) {
     const confirmBtn = dateSelection.querySelector('.confirm-dates');
     const cancelBtn = dateSelection.querySelector('.cancel-dates');
     const rangeSelect = dateSelection.querySelector('#timeRange');
-    confirmBtn.addEventListener('click', () => {
-        try {
-            const endDate = calculateEndDate(rangeSelect.value);
-            const selectedChats = [...document.querySelectorAll('.chat-item input:checked')]
-                .map(input => input.value);
-            dateSelection.classList.remove('show');
-            document.body.classList.add('loading');
-            startMessageDownload(selectedChats, {
-                endDate: formatDateForAPI(endDate),
-                displayRange: {
-                    end: endDate.toLocaleDateString()
-                }
-            });
-        } catch (error) {
-            console.error('Date processing error:', error);
-            alert('Error processing dates. Please try again.');
+    confirmBtn.addEventListener('click', async () => {
+      try {
+        const selectedTimeRange = rangeSelect.value;
+        const shouldContinue = await showPhoneRequirementDisclaimer(selectedTimeRange);
+        if (!shouldContinue) {
+          return;
         }
+        const endDate = calculateEndDate(selectedTimeRange);
+        const selectedChats = [...document.querySelectorAll('.chat-item input:checked')]
+            .map(input => input.value);
+        dateSelection.classList.remove('show');
+        document.body.classList.add('loading');
+        startMessageDownload(selectedChats, {
+          endDate: formatDateForAPI(endDate),
+          displayRange: {
+            end: endDate.toLocaleDateString()
+          }
+        });
+      } catch (error) {
+        console.error('Date processing error:', error);
+        alert('Error processing dates. Please try again.');
+      }
     });
     cancelBtn.addEventListener('click', () => {
-        dateSelection.classList.remove('show');
-        document.querySelector('.chat-selection')?.classList.remove('hidden');
-        document.querySelector('#mainDownload')?.classList.remove('hidden');
+      dateSelection.classList.remove('show');
+      document.querySelector('.chat-selection')?.classList.remove('hidden');
+      document.querySelector('#mainDownload')?.classList.remove('hidden');
     });
 }
 
