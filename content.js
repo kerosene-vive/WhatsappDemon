@@ -31,7 +31,8 @@ const SELECTORS = {
         item: 'div._ak8l',
         scrollContainer: 'div[tabindex="0"][role="application"]',
         viewport: '#app, .app-wrapper-web',
-        visibilityCheck: '[data-testid="chat"]'
+        visibilityCheck: '[data-testid="chat"]',
+        loadOlderButton: 'button.x14m1o6m, button.x1b9z3ur'
     },
     MEDIA_ELEMENTS: {
         images: 'img[src^="blob:"], div[style*="background-image"][role="button"]',
@@ -524,6 +525,16 @@ async function scrollChatToTop(endDate) {
     let unchangedIterations = 0;
     const targetDate = new Date(endDate);
     while (unchangedIterations < 3) {
+        const loadOlderButtons = document.querySelectorAll('button.x14m1o6m, button.x1b9z3ur');
+        for (const button of loadOlderButtons) {
+            if (button.textContent.includes("Click here to get older messages")) {
+                log("Found 'Load older messages' button, clicking it...");
+                simulateClick(button);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                unchangedIterations = 0;
+                break;
+            }
+        }
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
         if (!messages || messages.length === 0) {
             log("No messages found in chat");
