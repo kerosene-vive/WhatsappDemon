@@ -583,236 +583,330 @@ const SCROLL_CONFIG = {
     DATE_CHECK_INTERVAL: 10   // How often to log the oldest date
   };
   
-  // Enhanced scrollChatToTop function - keeps the original name
-  async function scrollChatToTop(endDate) {
-      const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
-      if (!container) {
-          log("Chat scroll container not found");
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          return;
-      }
-      
-      let prevMessageCount = 0;
-      let unchangedIterations = 0;
-      let consecutiveScrollFailures = 0;
-      let totalScrollFailures = 0;
-      let scrollAttempts = 0;
-      let recoveryLevel = 0;
-      let dateCheckCounter = 0;
-      let lastOldestDate = null;
-      
-      const targetDate = new Date(endDate);
-      
-      log("Starting to scroll to target date: " + endDate);
-      
-      // Store the original chat state to be able to return to it
-      const originalChatTitle = document.querySelector('header span[dir="auto"]')?.textContent?.trim();
-      
-      while (scrollAttempts < 200 && unchangedIterations < 5) {
-          scrollAttempts++;
-          
-          // Periodically log progress with dates
-          if (++dateCheckCounter % SCROLL_CONFIG.DATE_CHECK_INTERVAL === 0) {
-              const oldestDate = await findOldestVisibleDate();
-              if (oldestDate) {
-                  log(`Scrolling attempt ${scrollAttempts}/200. Oldest date seen: ${oldestDate.toDateString()}`);
-                  lastOldestDate = oldestDate;
-                  
-                  // Check if we've reached target date
-                  if (oldestDate < targetDate) {
-                      log(`Reached target date: ${oldestDate.toDateString()} is before ${targetDate.toDateString()}`);
-                      return;
-                  }
-              }
-          }
-          
-          // Check for and click "Load older messages" button
-          const loadOlderButtons = document.querySelectorAll('button.x14m1o6m, button.x1b9z3ur');
-          let buttonFound = false;
-          for (const button of loadOlderButtons) {
-              if (button.textContent.includes("Click here to get older messages")) {
-                  log("Found 'Load older messages' button, clicking it...");
-                  simulateClick(button);
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                  unchangedIterations = 0;
-                  consecutiveScrollFailures = 0;
-                  buttonFound = true;
-                  break;
-              }
-          }
-          
-          // Pause periodically to let the DOM catch up (reduces chance of getting stuck)
-          if (scrollAttempts % SCROLL_CONFIG.SCROLL_BATCH_SIZE === 0) {
-              log(`Batch pause at attempt ${scrollAttempts} to let the UI respond`);
-              await new Promise(resolve => setTimeout(resolve, SCROLL_CONFIG.SCROLL_BATCH_PAUSE));
-          }
-          
-          // Get current messages
-          const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
-          if (!messages || messages.length === 0) {
-              log("No messages found in chat");
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              continue;
-          }
-          
-          // Check if we're making progress loading more messages
-          const currentMessageCount = messages.length;
-          if (currentMessageCount > prevMessageCount) {
-              // We've made progress, reset failure counters
-              log(`Progress: loaded ${currentMessageCount} messages`);
-              unchangedIterations = 0;
-              consecutiveScrollFailures = 0;
-              prevMessageCount = currentMessageCount;
-          } else {
-              // No new messages loaded
-              unchangedIterations++;
-              log(`No new messages loaded (${unchangedIterations}/5 attempts)`);
-              
-              // Only count as a scroll failure if we haven't found a button
-              if (!buttonFound) {
-                  consecutiveScrollFailures++;
-                  totalScrollFailures++;
-                  log(`Scroll appears stuck: ${consecutiveScrollFailures}/${SCROLL_CONFIG.MAX_CONSECUTIVE_FAILURES} failures`);
-              }
-          }
-          
-          // Try to scroll using the most appropriate method based on failure count
-          try {
-              if (messages[0]) {
-                  if (consecutiveScrollFailures === 0) {
-                      // Normal scroll - use different approaches in rotation to avoid getting stuck
-                      const scrollVariation = scrollAttempts % 4;
-                      
-                      if (scrollVariation === 0) {
-                          // Standard smooth scroll
-                          messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                          await new Promise(resolve => setTimeout(resolve, 300));
-                          if (container.scrollTop > 1000) {
-                              container.scrollTop -= 1000;
-                          }
-                      } else if (scrollVariation === 1) {
-                          // Direct position adjustment
-                          container.scrollTop = 0;
-                          await new Promise(resolve => setTimeout(resolve, 300));
-                      } else if (scrollVariation === 2) {
-                          // Auto scroll
-                          messages[0].scrollIntoView({ block: 'start' });
-                          await new Promise(resolve => setTimeout(resolve, 300));
-                      } else {
-                          // Jump scroll with more distance
-                          messages[0].scrollIntoView({ behavior: 'auto', block: 'center' });
-                          await new Promise(resolve => setTimeout(resolve, 300));
-                          container.scrollTop = 0;
-                      }
-                  } else if (consecutiveScrollFailures <= SCROLL_CONFIG.MAX_CONSECUTIVE_FAILURES) {
-                      // Try recovery measures based on failure level
-                      log(`Using alternative scrolling method (attempt ${consecutiveScrollFailures})`);
-                      
-                      if (consecutiveScrollFailures === 1) {
-                          // Method 1: Try scrolling with a different behavior
-                          messages[0].scrollIntoView({ block: 'start' });
-                          await new Promise(resolve => setTimeout(resolve, 500));
-                          container.scrollTop -= 1500; // Scroll up more aggressively
-                      } else if (consecutiveScrollFailures === 2) {
-                          // Method 2: Try clicking near the top to activate the area
-                          log("Clicking near the top to activate scrolling");
-                          const topArea = messages[0];
-                          if (topArea) {
-                              simulateClick(topArea);
-                              await new Promise(resolve => setTimeout(resolve, 500));
-                          }
-                          container.scrollTop = 0; // Force scroll to top
-                          await new Promise(resolve => setTimeout(resolve, 500));
-                      } else {
-                          // Method 3: Try more aggressive DOM manipulation
-                          log("Using DOM manipulation to unstick scrolling");
-                          // Temporarily change styling to force layout recalculation
-                          const originalHeight = container.style.height;
-                          const originalOverflow = container.style.overflow;
-                          
-                          container.style.height = '99%';
-                          container.style.overflow = 'hidden';
-                          await new Promise(resolve => setTimeout(resolve, 300));
-                          container.style.height = originalHeight;
-                          container.style.overflow = originalOverflow;
-                          await new Promise(resolve => setTimeout(resolve, 300));
-                          
-                          container.scrollTop = 0;
-                      }
-                  } else {
-                      // Major recovery needed - try to reset the view
-                      log("Too many scroll failures, applying emergency scroll reset");
-                      
-                      // Try to force a chat reset if possible
-                      const resetSuccessful = await attemptChatReset(originalChatTitle);
-                      
-                      if (!resetSuccessful) {
-                          // Apply random scrolling to try to unstick
-                          for (let i = 0; i < 5; i++) {
-                              const randomScroll = Math.floor(Math.random() * 1000);
-                              container.scrollTop = randomScroll;
-                              await new Promise(resolve => setTimeout(resolve, 200));
-                          }
-                          
-                          // Reset to top
-                          container.scrollTop = 0;
-                          await new Promise(resolve => setTimeout(resolve, 1000));
-                      }
-                      
-                      // Reset failure counter
-                      consecutiveScrollFailures = 1;
-                  }
-              }
-          } catch (scrollError) {
-              log(`Scroll error: ${scrollError.message}`);
-              consecutiveScrollFailures++;
-              totalScrollFailures++;
-          }
-          
-          // Add random delay to avoid predictable patterns that might get stuck
-          const randomDelay = Math.floor(Math.random() * 500) + 500;
-          await new Promise(resolve => setTimeout(resolve, randomDelay));
-          
-          // Emergency exit if too many total failures
-          if (totalScrollFailures > SCROLL_CONFIG.MAX_TOTAL_FAILURES) {
-              log(`Reached maximum total failures (${totalScrollFailures}), applying last resort recovery`);
-              await applyLastResortRecovery(container);
-              totalScrollFailures = 0; // Reset to give it another chance
-          }
-      }
-      
-      if (scrollAttempts >= 200) {
-          log(`Reached maximum scroll attempts (200), continuing with available messages`);
-      } else {
-          log(`Stopped scrolling after ${scrollAttempts} attempts due to no message count changes`);
-      }
-  }
-  
-  // Find the oldest visible date in the chat
   async function findOldestVisibleDate() {
-      const dateElements = document.querySelectorAll('[data-id], div[role="row"] > div:first-child');
-      
-      for (const element of dateElements) {
-          const text = element.textContent?.trim();
-          if (text && /^\d{2}\/\d{2}\/\d{4}$/.test(text)) {
-              const [day, month, year] = text.split('/').map(Number);
-              return new Date(year, month - 1, day);
-          }
-      }
-      
-      // Alternative date format check (for different regional settings)
-      const alternativeElements = document.querySelectorAll('div[data-pre-plain-text]');
-      for (const element of alternativeElements) {
-          const prePlainText = element.getAttribute('data-pre-plain-text') || '';
-          const dateMatch = prePlainText.match(/\[(\d{2})\/(\d{2})\/(\d{4})/);
-          if (dateMatch) {
-              const [_, day, month, year] = dateMatch;
-              return new Date(Number(year), Number(month) - 1, Number(day));
-          }
-      }
-      
-      return null;
-  }
+    const extractDateMethods = [
+        () => {
+            const elementsToCheck = document.querySelectorAll(
+                '[data-id], .x3nfvp2.xxymvpz, [data-pre-plain-text], ' + 
+                'div[role="row"] > div:first-child, span[dir="auto"], .message-in, .message-out'
+            );
+            
+            for (const element of elementsToCheck) {
+                const possibleTexts = [
+                    element.textContent?.trim(),
+                    element.getAttribute('data-pre-plain-text') || '',
+                    element.getAttribute('title') || ''
+                ];
+                
+                const dateFormats = [
+                    /(\d{2})\/(\d{2})\/(\d{4})/,  // DD/MM/YYYY
+                    /(\d{4})-(\d{2})-(\d{2})/,    // YYYY-MM-DD
+                    /(\d{2})-(\d{2})-(\d{4})/     // DD-MM-YYYY
+                ];
+                
+                for (const text of possibleTexts) {
+                    for (const regex of dateFormats) {
+                        const match = text.match(regex);
+                        if (match) {
+                            let day, month, year;
+                            if (regex === /(\d{2})\/(\d{2})\/(\d{4})/) {
+                                [, day, month, year] = match;
+                            } else if (regex === /(\d{4})-(\d{2})-(\d{2})/) {
+                                [, year, month, day] = match;
+                            } else {
+                                [, day, month, year] = match;
+                            }
+                            
+                            const parsedDate = new Date(Number(year), Number(month) - 1, Number(day));
+                            
+                            if (!isNaN(parsedDate.getTime())) {
+                                log(`Date found: ${parsedDate.toLocaleDateString('en-GB')} (from text: ${text})`);
+                                return parsedDate;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return null;
+        },
+        
+        () => {
+            const timestampElements = document.querySelectorAll('.x3nfvp2.xxymvpz');
+            for (const element of timestampElements) {
+                const titleDate = element.getAttribute('title')?.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+                if (titleDate) {
+                    const [_, day, month, year] = titleDate;
+                    const parsedDate = new Date(Number(year), Number(month) - 1, Number(day));
+                    return parsedDate;
+                }
+            }
+            return null;
+        },
+        
+        () => {
+            const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+            
+            if (messages.length > 0) {
+                const checkMessageContext = (message) => {
+                    let current = message;
+                    while (current) {
+                        const textContent = current.textContent?.trim();
+                        if (textContent && /^\d{2}\/\d{2}\/\d{4}$/.test(textContent)) {
+                            const [day, month, year] = textContent.split('/').map(Number);
+                            return new Date(year, month - 1, day);
+                        }
+                        current = current.previousElementSibling;
+                    }
+                    return null;
+                };
+                
+                const firstMessageDate = checkMessageContext(messages[0]);
+                if (firstMessageDate) return firstMessageDate;
+                
+                const lastMessageDate = checkMessageContext(messages[messages.length - 1]);
+                if (lastMessageDate) return lastMessageDate;
+            }
+            
+            return null;
+        }
+    ];
+    
+    for (const method of extractDateMethods) {
+        try {
+            const date = method();
+            if (date) {
+                log(`Oldest date found by method: ${date.toLocaleDateString('en-GB')}`);
+                return date;
+            }
+        } catch (error) {
+            log(`Date extraction method failed: ${error.message}`);
+        }
+    }
+    
+    log('NO DATE FOUND - Debugging information:');
+    log('Total messages: ' + document.querySelectorAll(SELECTORS.MESSAGE.container).length);
+    
+    const debugTexts = [];
+    const elementsToDebug = document.querySelectorAll(
+        '[data-id], .x3nfvp2.xxymvpz, [data-pre-plain-text], ' + 
+        'div[role="row"] > div:first-child, span[dir="auto"]'
+    );
+    
+    for (let i = 0; i < Math.min(10, elementsToDebug.length); i++) {
+        const el = elementsToDebug[i];
+        debugTexts.push({
+            text: el.textContent?.trim(),
+            attributes: {
+                'data-pre-plain-text': el.getAttribute('data-pre-plain-text'),
+                'title': el.getAttribute('title')
+            }
+        });
+    }
+    
+    log('Debug texts: ' + JSON.stringify(debugTexts, null, 2));
+    
+    return null;
+}
+
+async function scrollChatToTop(endDate) {
+    const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
+    if (!container) {
+        log("Chat scroll container not found");
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return;
+    }
+    
+    let prevMessageCount = 0;
+    let unchangedIterations = 0;
+    let consecutiveScrollFailures = 0;
+    let totalScrollFailures = 0;
+    let scrollAttempts = 0;
+    let stopScrolling = false;
+    
+    const targetDate = endDate instanceof Date 
+        ? endDate 
+        : new Date(endDate);
+    
+    log(`Starting to scroll to target date: ${targetDate.toLocaleDateString('en-GB')}`);
+    
+    const originalChatTitle = document.querySelector('header span[dir="auto"]')?.textContent?.trim();
+    
+    const checkStopScrolling = async () => {
+        const oldestDate = await findOldestVisibleDate();
+        
+        if (!oldestDate) {
+            log('No date found, continuing scroll');
+            return false;
+        }
+        
+        const normalizedTarget = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+        const normalizedCurrent = new Date(oldestDate.getFullYear(), oldestDate.getMonth(), oldestDate.getDate());
+        
+        const shouldStop = normalizedCurrent <= normalizedTarget;
+        
+        if (shouldStop) {
+            log(`STOPPING SCROLL: 
+                Oldest date found: ${oldestDate.toLocaleDateString('en-GB')}
+                Target date: ${targetDate.toLocaleDateString('en-GB')}`);
+        }
+        
+        return shouldStop;
+    };
+    
+    while (scrollAttempts < 200 && unchangedIterations < 5 && !stopScrolling) {
+        scrollAttempts++;
+        
+        stopScrolling = await checkStopScrolling();
+        if (stopScrolling) {
+            log('Stopping scroll process - reached target date range');
+            break;
+        }
+        
+        const loadOlderButtons = document.querySelectorAll('button.x14m1o6m, button.x1b9z3ur');
+        let buttonFound = false;
+        for (const button of loadOlderButtons) {
+            if (button.textContent.includes("Click here to get older messages")) {
+                log("Found 'Load older messages' button, clicking it...");
+                simulateClick(button);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                unchangedIterations = 0;
+                consecutiveScrollFailures = 0;
+                buttonFound = true;
+                break;
+            }
+        }
+        
+        if (scrollAttempts % SCROLL_CONFIG.SCROLL_BATCH_SIZE === 0) {
+            log(`Batch pause at attempt ${scrollAttempts} to let the UI respond`);
+            await new Promise(resolve => setTimeout(resolve, SCROLL_CONFIG.SCROLL_BATCH_PAUSE));
+        }
+        
+        const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+        if (!messages || messages.length === 0) {
+            log("No messages found in chat");
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            continue;
+        }
+        
+        const currentMessageCount = messages.length;
+        if (currentMessageCount > prevMessageCount) {
+            log(`Progress: loaded ${currentMessageCount} messages`);
+            unchangedIterations = 0;
+            consecutiveScrollFailures = 0;
+            prevMessageCount = currentMessageCount;
+        } else {
+            unchangedIterations++;
+            log(`No new messages loaded (${unchangedIterations}/5 attempts)`);
+            
+            if (!buttonFound) {
+                consecutiveScrollFailures++;
+                totalScrollFailures++;
+                log(`Scroll appears stuck: ${consecutiveScrollFailures}/${SCROLL_CONFIG.MAX_CONSECUTIVE_FAILURES} failures`);
+            }
+        }
+        
+        try {
+            if (messages[0]) {
+                if (consecutiveScrollFailures === 0) {
+                    const scrollVariation = scrollAttempts % 4;
+                    
+                    if (scrollVariation === 0) {
+                        messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        if (container.scrollTop > 1000) {
+                            container.scrollTop -= 1000;
+                        }
+                    } else if (scrollVariation === 1) {
+                        container.scrollTop = 0;
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                    } else if (scrollVariation === 2) {
+                        messages[0].scrollIntoView({ block: 'start' });
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                    } else {
+                        messages[0].scrollIntoView({ behavior: 'auto', block: 'center' });
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        container.scrollTop = 0;
+                    }
+                } else if (consecutiveScrollFailures <= SCROLL_CONFIG.MAX_CONSECUTIVE_FAILURES) {
+                    log(`Using alternative scrolling method (attempt ${consecutiveScrollFailures})`);
+                    
+                    if (consecutiveScrollFailures === 1) {
+                        messages[0].scrollIntoView({ block: 'start' });
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        container.scrollTop -= 1500;
+                    } else if (consecutiveScrollFailures === 2) {
+                        log("Clicking near the top to activate scrolling");
+                        const topArea = messages[0];
+                        if (topArea) {
+                            simulateClick(topArea);
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        }
+                        container.scrollTop = 0;
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    } else {
+                        log("Using DOM manipulation to unstick scrolling");
+                        const originalHeight = container.style.height;
+                        const originalOverflow = container.style.overflow;
+                        
+                        container.style.height = '99%';
+                        container.style.overflow = 'hidden';
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        container.style.height = originalHeight;
+                        container.style.overflow = originalOverflow;
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        
+                        container.scrollTop = 0;
+                    }
+                } else {
+                    log("Too many scroll failures, applying emergency scroll reset");
+                    
+                    const resetSuccessful = await attemptChatReset(originalChatTitle);
+                    
+                    if (!resetSuccessful) {
+                        for (let i = 0; i < 5; i++) {
+                            const randomScroll = Math.floor(Math.random() * 1000);
+                            container.scrollTop = randomScroll;
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                        }
+                        
+                        container.scrollTop = 0;
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                    
+                    consecutiveScrollFailures = 1;
+                }
+            }
+        } catch (scrollError) {
+            log(`Scroll error: ${scrollError.message}`);
+            consecutiveScrollFailures++;
+            totalScrollFailures++;
+        }
+        
+        const randomDelay = Math.floor(Math.random() * 500) + 500;
+        await new Promise(resolve => setTimeout(resolve, randomDelay));
+        
+        if (totalScrollFailures > SCROLL_CONFIG.MAX_TOTAL_FAILURES) {
+            log(`Reached maximum total failures (${totalScrollFailures}), applying last resort recovery`);
+            await applyLastResortRecovery(container);
+            totalScrollFailures = 0;
+        }
+        
+        stopScrolling = await checkStopScrolling();
+        if (stopScrolling) {
+            log('Stopping scroll process - reached target date range');
+            break;
+        }
+    }
+    
+    if (scrollAttempts >= 200) {
+        log(`Reached maximum scroll attempts (200), continuing with available messages`);
+    } else if (unchangedIterations >= 5) {
+        log(`Stopped scrolling after ${scrollAttempts} attempts due to no message count changes`);
+    } else if (stopScrolling) {
+        log(`Stopped scrolling due to reaching target date`);
+    }
+}
   
   // Try to reset the chat view by navigating away and back
   async function attemptChatReset(chatTitle) {
