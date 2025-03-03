@@ -494,8 +494,6 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             </script>
         </body>
         </html>`;
-        const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
-        await downloadMedia(htmlBlob, `${exportFolder}/Complete.html`);
         log('Splitting chat into monthly segments...');
         const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle, exportFolder);
         return {
