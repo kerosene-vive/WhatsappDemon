@@ -396,20 +396,12 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                     font-weight: bold;
                     border-bottom: 1px solid rgba(0,0,0,0.1);
                     margin-bottom: 10px;
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    width: 100%;
+                    position: relative;
                     background: var(--header-bg);
                     z-index: 100;
                     color: var(--header-text);
                     box-shadow: var(--shadow);
                     border-radius: 0;
-                    transform: translateZ(0);
-                    will-change: transform;
-                    -webkit-backface-visibility: hidden;
-                    backface-visibility: hidden;
                     letter-spacing: 0.5px;
                     display: flex;
                     justify-content: center;
@@ -594,9 +586,8 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             </style>
         </head>
         <body>
-            ${headerHtml}
             <div id="time-capsule-container">
-                <div style="padding-top: 60px;"></div>
+                ${headerHtml}
                 ${processedContainer.innerHTML}
             </div>
             <button class="theme-toggle" id="themeToggle">
