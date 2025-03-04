@@ -299,6 +299,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         await scrollChatToTop(endDate);
         const exportFolder = generateExportFolderName(chatTitle);
         const messagesContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
+     
         async function convertImageToBase64(imageElement) {
             try {
                 const response = await fetch(imageElement.src);
@@ -333,7 +334,9 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             });
             return container;
         }
-        const processedContainer = await processImagesInContainer(messagesContainer.cloneNode(true));
+        const processedContainer = await enhanceImageLoading(
+            await processImagesInContainer(messagesContainer.cloneNode(true))
+        );
         const capturedStyles = Array.from(document.styleSheets)
             .map(sheet => {
                 try {
@@ -684,7 +687,70 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         throw error;
     }
 }
-  
+
+async function enhanceImageLoading(container) {
+    const imageSelectors = [
+        'img[src^="blob:"]',
+        'img[src^="https://"]',
+        'img[src=""]',
+        'div[style*="background-image"][role="button"]'
+    ];
+
+    const images = container.querySelectorAll(imageSelectors.join(', '));
+    
+    for (const img of images) {
+        try {
+            // Handle background image elements
+            if (img.style.backgroundImage && img.style.backgroundImage !== 'none') {
+                const bgUrl = img.style.backgroundImage.match(/url\(["']?([^"']*)["']?\)/);
+                if (bgUrl && bgUrl[1]) {
+                    img.style.backgroundImage = `url('${await loadImage(bgUrl[1])}')`;
+                }
+                continue;
+            }
+
+            // Handle regular img elements
+            if (!img.src || img.src.startsWith('blob:') || img.src === '') {
+                const potentialSrcs = [
+                    img.getAttribute('data-src'),
+                    img.getAttribute('data-original-src'),
+                    img.getAttribute('data-url')
+                ];
+
+                for (const potentialSrc of potentialSrcs) {
+                    if (potentialSrc) {
+                        img.src = await loadImage(potentialSrc);
+                        break;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Image loading error:', error);
+        }
+    }
+
+    return container;
+}
+
+async function loadImage(src) {
+    try {
+        const response = await fetch(src, {
+            mode: 'cors',
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
+    } catch (error) {
+        console.error('Failed to load image:', src, error);
+        return src; // Fallback to original src
+    }
+}
+
 async function findOldestVisibleDate() {
     const extractDateMethods = [
         () => {
