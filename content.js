@@ -12,8 +12,13 @@ let initializationAttempts = 0;
 const MAX_INIT_ATTEMPTS = 5;
 let availableChats = [];
 let processingAutomation = false;
-const processedFiles = new Set();
-
+const SCROLL_CONFIG = {
+    MAX_CONSECUTIVE_FAILURES: 3,
+    MAX_TOTAL_FAILURES: 15,
+    SCROLL_BATCH_SIZE: 30,
+    SCROLL_BATCH_PAUSE: 2000,
+    DATE_CHECK_INTERVAL: 10
+};
 const SELECTORS = {
     CHAT_LIST: { container: '#pane-side', messages: '[role="row"]', mainPanel: '#main' },
     MESSAGE: {
@@ -31,7 +36,8 @@ const SELECTORS = {
         item: 'div._ak8l',
         scrollContainer: 'div[tabindex="0"][role="application"]',
         viewport: '#app, .app-wrapper-web',
-        visibilityCheck: '[data-testid="chat"]'
+        visibilityCheck: '[data-testid="chat"]',
+        loadOlderButton: 'button.x14m1o6m, button.x1b9z3ur'
     },
     MEDIA_ELEMENTS: {
         images: 'img[src^="blob:"], div[style*="background-image"][role="button"]',
@@ -103,26 +109,6 @@ function generateExportFolderName(chatTitle) {
     const seconds = String(now.getSeconds()).padStart(2, '0');
     const folderName = `Export_${day}-${month}-${year}_${hours}-${minutes}-${seconds}`;
     return `${chatTitle}/${folderName}`;
-}
-
-async function maximizeWindow() {
-    const viewport = document.querySelector(SELECTORS.CHAT.viewport);
-    if (!viewport) return false;
-    const originalStyles = {
-        width: viewport.style.width,
-        height: viewport.style.height,
-        position: viewport.style.position
-    };
-    viewport.style.position = 'fixed';
-    viewport.style.width = '100vw';
-    viewport.style.height = '100vh';
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return originalStyles;
-}
-
-async function restoreWindow(viewport, originalStyles) {
-    if (!viewport || !originalStyles) return;
-    Object.assign(viewport.style, originalStyles);
 }
 
 async function initialize() {
@@ -227,22 +213,6 @@ async function automateWhatsAppExport(selectedChats, endDate) {
     }
 }
 
-function ensureDOMReady() {
-    const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
-    if (!container) {
-        throw new Error('Chat container not found. Please ensure WhatsApp is fully loaded.');
-    }
-    const messageContainer = document.querySelector(SELECTORS.CHAT.messageContainer);
-    if (!messageContainer) {
-        throw new Error('Message container not found. Please select a chat first.');
-    }
-    const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
-    if (messages.length === 0) {
-        log('No messages found in current chat');
-    }
-    return true;
-}
-
 async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(fullHtml, 'text/html');
@@ -329,6 +299,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         await scrollChatToTop(endDate);
         const exportFolder = generateExportFolderName(chatTitle);
         const messagesContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
+     
         async function convertImageToBase64(imageElement) {
             try {
                 const response = await fetch(imageElement.src);
@@ -363,7 +334,9 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             });
             return container;
         }
-        const processedContainer = await processImagesInContainer(messagesContainer.cloneNode(true));
+        const processedContainer = await enhanceImageLoading(
+            await processImagesInContainer(messagesContainer.cloneNode(true))
+        );
         const capturedStyles = Array.from(document.styleSheets)
             .map(sheet => {
                 try {
@@ -377,80 +350,155 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             .join('\n');
         const headerHtml = `
             <div class="nostalgic-header">
-                ${chatTitle} - WhatsApp Memories
+                <span class="header-emoji">💫</span> ${chatTitle} <span class="header-emoji">💭</span>
             </div>
         `;
         const fullPageHTML = `<!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <title>${chatTitle}</title>
+            <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
             <style>
                 ${capturedStyles}
+                :root {
+                    --bg-color: #f0f2f5;
+                    --header-bg: #d9fdd3;
+                    --header-text: #0b806a;
+                    --bubble-in: #ffffff;
+                    --bubble-out: #d9fdd3;
+                    --text-color: #111b21;
+                    --meta-text: #667781;
+                    --border-radius: 12px;
+                    --shadow: 0 1px 3px rgba(0,0,0,0.08);
+                }
+                [data-theme="dark"] {
+                    --bg-color: #111b21;
+                    --header-bg: #202c33;
+                    --header-text: #00a884;
+                    --bubble-in: #202c33;
+                    --bubble-out: #005c4b;
+                    --text-color: #e9edef;
+                    --meta-text: #8696a0;
+                }
                 body, html {
                     margin: 0;
                     padding: 0;
                     height: 100%;
-                    overflow: hidden;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    background-color: var(--bg-color);
+                    color: var(--text-color);
+                    line-height: 1.5;
+                    -webkit-text-size-adjust: 100%;
                 }
                 .nostalgic-header {
                     text-align: center;
-                    padding: 15px;
-                    font-size: 24px;
+                    padding: 15px 10px;
+                    font-size: 20px;
                     font-weight: bold;
-                    border-bottom: 2px solid #ccc;
+                    border-bottom: 1px solid rgba(0,0,0,0.1);
                     margin-bottom: 10px;
-                    position: sticky;
-                    top: 0;
-                    background: #f0f0f0;
+                    position: relative;
+                    background: var(--header-bg);
                     z-index: 100;
+                    color: var(--header-text);
+                    box-shadow: var(--shadow);
+                    border-radius: 0;
+                    letter-spacing: 0.5px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                }
+                .header-emoji {
+                    font-size: 18px;
+                    margin: 0 6px;
+                    animation: float 2s infinite ease-in-out alternate;
+                }
+                
+                @keyframes float {
+                    0% { transform: translateY(0px); }
+                    100% { transform: translateY(-3px); }
                 }
                 #time-capsule-container {
+                    max-width: 600px;
+                    margin: 0 auto;
                     height: 100vh;
                     overflow-y: auto;
                     position: relative;
+                    padding: 0 10px;
+                    box-sizing: border-box;
+                    scroll-behavior: smooth;
+                    -webkit-overflow-scrolling: touch;
+                }
+                /* Message bubble improvements */
+                .message-in, .message-out {
+                    margin: 8px 0 !important;
+                    padding: 8px 12px !important;
+                    border-radius: var(--border-radius) !important;
+                    box-shadow: var(--shadow) !important;
+                    max-width: 80% !important;
+                    word-wrap: break-word !important;
+                    position: relative !important;
+                }
+                .message-in {
+                    background-color: var(--bubble-in) !important;
+                    margin-right: auto !important;
+                    border-top-left-radius: 0 !important;
+                }
+                .message-out {
+                    background-color: var(--bubble-out) !important;
+                    margin-left: auto !important;
+                    border-top-right-radius: 0 !important;
+                }
+                /* Message meta (time, status) */
+                .message-meta {
+                    font-size: 11px !important;
+                    color: var(--meta-text) !important;
+                    text-align: right !important;
+                    margin-top: 3px !important;
                 }
                 /* Audio message styling */
                 .message-in .audio-player, .message-out .audio-player {
-                    border-radius: 7.5px;
+                    border-radius: 10px;
                     display: flex;
                     align-items: center;
-                    padding: 6px 10px;
+                    padding: 8px 12px;
                     position: relative;
                 }
                 .message-in .audio-player {
-                    background-color: #fff;
+                    background-color: var(--bubble-in);
                 }
                 .message-out .audio-player {
-                    background-color: #dcf8c6;
-                }
-                [data-theme="dark"] .message-in .audio-player {
-                    background-color: #063b28;
-                }
-                [data-theme="dark"] .message-out .audio-player {
-                    background-color: #025d4b;
+                    background-color: var(--bubble-out);
                 }
                 /* Play button styling */
                 .audio-play-button {
-                    width: 34px;
-                    height: 34px;
+                    width: 36px;
+                    height: 36px;
                     border-radius: 50%;
-                    background-color: #fff;
+                    background-color: var(--header-text);
+                    color: white;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    margin-right: 10px;
+                    margin-right: 12px;
+                    cursor: pointer;
+                    transition: transform 0.2s;
+                }
+                .audio-play-button:active {
+                    transform: scale(0.95);
                 }
                 /* Audio waveform styling */
                 .audio-waveform {
                     flex-grow: 1;
-                    height: 25px;
+                    height: 28px;
                     margin: 0 10px;
                     display: flex;
                     align-items: center;
                 }
                 .audio-waveform-bar {
-                    background-color: #aaa;
+                    background-color: var(--meta-text);
                     width: 2px;
                     height: 16px;
                     margin: 0 1px;
@@ -458,24 +506,85 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 }
                 /* Time counter styling */
                 .audio-time {
-                    font-size: 11px;
-                    color: #8696a0;
+                    font-size: 12px;
+                    color: var(--meta-text);
                     margin-right: 5px;
                     font-weight: 400;
                 }
-                /* Profile picture in audio messages */
-                .audio-player .profile-picture {
-                    width: 40px;
-                    height: 40px;
+                /* Profile picture styling */
+                .profile-picture {
+                    width: 36px;
+                    height: 36px;
                     border-radius: 50%;
                     overflow: hidden;
                     margin-right: 10px;
+                    border: 2px solid var(--header-text);
                 }
                 /* Ensure images are responsive */
                 #time-capsule-container img {
                     max-width: 100%;
                     height: auto;
                     object-fit: contain;
+                    border-radius: 8px;
+                }
+                /* Date separators */
+                .chat-date-separator {
+                    text-align: center;
+                    margin: 16px 0;
+                    position: relative;
+                }
+                .chat-date-text {
+                    background: var(--header-bg);
+                    padding: 5px 10px;
+                    border-radius: 12px;
+                    font-size: 12px;
+                    display: inline-block;
+                    box-shadow: var(--shadow);
+                    color: var(--header-text);
+                    font-weight: 500;
+                }
+                /* Theme toggle */
+                .theme-toggle {
+                    position: fixed;
+                    bottom: 20px;
+                    right: 20px;
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 50%;
+                    background: var(--header-bg);
+                    color: var(--header-text);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                    cursor: pointer;
+                    z-index: 1000;
+                    border: none;
+                }
+                /* Kawaii elements */
+                .message-in::before, .message-out::before {
+                    content: '';
+                    position: absolute;
+                    width: 0;
+                    height: 0;
+                    border-style: solid;
+                }
+                .message-in::before {
+                    border-width: 0 10px 10px 0;
+                    border-color: transparent var(--bubble-in) transparent transparent;
+                    top: 0;
+                    left: -10px;
+                }
+                .message-out::before {
+                    border-width: 0 0 10px 10px;
+                    border-color: transparent transparent transparent var(--bubble-out);
+                    top: 0;
+                    right: -10px;
+                }
+                @media (max-width: 600px) {
+                    .message-in, .message-out {
+                        max-width: 85% !important;
+                    }
                 }
             </style>
         </head>
@@ -484,17 +593,83 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 ${headerHtml}
                 ${processedContainer.innerHTML}
             </div>
+            <button class="theme-toggle" id="themeToggle">
+                <i class="fas fa-moon"></i>
+            </button>
             <script>
                 window.onload = function() {
-                    document.addEventListener('gesturestart', function (e) {
+                    // Prevent pinch zoom on mobile
+                    document.addEventListener('gesturestart', function(e) {
                         e.preventDefault();
                     });
+                    
+                    // Add date separators
+                    function addDateSeparators() {
+                        const messages = document.querySelectorAll('div.message-in, div.message-out');
+                        let currentDate = '';
+                        
+                        messages.forEach(message => {
+                            const dateMeta = message.querySelector('[data-pre-plain]');
+                            if (dateMeta) {
+                                const dateText = dateMeta.getAttribute('data-pre-plain');
+                                const dateMatch = dateText.match(/\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}/);
+                                
+                                if (dateMatch && dateMatch[0] !== currentDate) {
+                                    currentDate = dateMatch[0];
+                                    const separator = document.createElement('div');
+                                    separator.className = 'chat-date-separator';
+                                    separator.innerHTML = \`<span class="chat-date-text">🗓️ \${currentDate} 🗓️</span>\`;
+                                    message.parentNode.insertBefore(separator, message);
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Theme toggle functionality
+                    const themeToggle = document.getElementById('themeToggle');
+                    const icon = themeToggle.querySelector('i');
+                    
+                    themeToggle.addEventListener('click', function() {
+                        document.body.setAttribute('data-theme', 
+                            document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+                        
+                        icon.className = document.body.getAttribute('data-theme') === 'dark' 
+                            ? 'fas fa-sun' 
+                            : 'fas fa-moon';
+                    });
+                    
+                    // Fix audio player appearance
+                    const audioPlayers = document.querySelectorAll('.audio-player');
+                    audioPlayers.forEach(player => {
+                        // Add play button icon if missing
+                        const playButton = player.querySelector('.audio-play-button');
+                        if (playButton && !playButton.querySelector('i')) {
+                            playButton.innerHTML = '<i class="fas fa-play"></i>';
+                        }
+                        
+                        // Ensure waveform has bars
+                        const waveform = player.querySelector('.audio-waveform');
+                        if (waveform && waveform.children.length === 0) {
+                            for (let i = 0; i < 20; i++) {
+                                const bar = document.createElement('div');
+                                bar.className = 'audio-waveform-bar';
+                                bar.style.height = \`\${Math.floor(Math.random() * 20) + 5}px\`;
+                                waveform.appendChild(bar);
+                            }
+                        }
+                    });
+                    
+                    // Add message timestamps class for styling
+                    document.querySelectorAll('[data-pre-plain]').forEach(meta => {
+                        meta.classList.add('message-meta');
+                    });
+                    
+                    // Run setup functions
+                    addDateSeparators();
                 }
             </script>
         </body>
         </html>`;
-        const htmlBlob = new Blob([fullPageHTML], { type: 'text/html' });
-        await downloadMedia(htmlBlob, `${exportFolder}/Complete.html`);
         log('Splitting chat into monthly segments...');
         const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle, exportFolder);
         return {
@@ -513,6 +688,178 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
     }
 }
 
+async function enhanceImageLoading(container) {
+    const imageSelectors = [
+        'img[src^="blob:"]',
+        'img[src^="https://"]',
+        'img[src=""]',
+        'div[style*="background-image"][role="button"]'
+    ];
+
+    const images = container.querySelectorAll(imageSelectors.join(', '));
+    
+    for (const img of images) {
+        try {
+            // Handle background image elements
+            if (img.style.backgroundImage && img.style.backgroundImage !== 'none') {
+                const bgUrl = img.style.backgroundImage.match(/url\(["']?([^"']*)["']?\)/);
+                if (bgUrl && bgUrl[1]) {
+                    img.style.backgroundImage = `url('${await loadImage(bgUrl[1])}')`;
+                }
+                continue;
+            }
+
+            // Handle regular img elements
+            if (!img.src || img.src.startsWith('blob:') || img.src === '') {
+                const potentialSrcs = [
+                    img.getAttribute('data-src'),
+                    img.getAttribute('data-original-src'),
+                    img.getAttribute('data-url')
+                ];
+
+                for (const potentialSrc of potentialSrcs) {
+                    if (potentialSrc) {
+                        img.src = await loadImage(potentialSrc);
+                        break;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Image loading error:', error);
+        }
+    }
+
+    return container;
+}
+
+async function loadImage(src) {
+    try {
+        const response = await fetch(src, {
+            mode: 'cors',
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
+    } catch (error) {
+        console.error('Failed to load image:', src, error);
+        return src; // Fallback to original src
+    }
+}
+
+async function findOldestVisibleDate() {
+    const extractDateMethods = [
+        () => {
+            const elementsToCheck = document.querySelectorAll(
+                '[data-id], .x3nfvp2.xxymvpz, [data-pre-plain-text], ' + 
+                'div[role="row"] > div:first-child, span[dir="auto"], .message-in, .message-out'
+            );
+            
+            for (const element of elementsToCheck) {
+                const possibleTexts = [
+                    element.textContent?.trim(),
+                    element.getAttribute('data-pre-plain-text') || '',
+                    element.getAttribute('title') || ''
+                ];
+                const dateFormats = [
+                    /(\d{2})\/(\d{2})\/(\d{4})/,
+                    /(\d{4})-(\d{2})-(\d{2})/,
+                    /(\d{2})-(\d{2})-(\d{4})/
+                ];
+                for (const text of possibleTexts) {
+                    for (const regex of dateFormats) {
+                        const match = text.match(regex);
+                        if (match) {
+                            let day, month, year;
+                            if (regex.source === '(\\d{2})\\/(\\d{2})\\/(\\d{4})') {
+                                [, day, month, year] = match;
+                            } else if (regex.source === '(\\d{4})-(\\d{2})-(\\d{2})') {
+                                [, year, month, day] = match;
+                            } else {
+                                [, day, month, year] = match;
+                            }
+                            const parsedDate = new Date(Number(year), Number(month) - 1, Number(day));
+                            if (!isNaN(parsedDate.getTime())) {
+                                log(`Date found: ${parsedDate.toLocaleDateString('en-GB')} (from text: ${text})`);
+                                return parsedDate;
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        },
+        () => {
+            const timestampElements = document.querySelectorAll('.x3nfvp2.xxymvpz');
+            for (const element of timestampElements) {
+                const titleDate = element.getAttribute('title')?.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+                if (titleDate) {
+                    const [_, day, month, year] = titleDate;
+                    const parsedDate = new Date(Number(year), Number(month) - 1, Number(day));
+                    return parsedDate;
+                }
+            }
+            return null;
+        },
+        () => {
+            const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
+            if (messages.length > 0) {
+                const checkMessageContext = (message) => {
+                    let current = message;
+                    while (current) {
+                        const textContent = current.textContent?.trim();
+                        if (textContent && /^\d{2}\/\d{2}\/\d{4}$/.test(textContent)) {
+                            const [day, month, year] = textContent.split('/').map(Number);
+                            return new Date(year, month - 1, day);
+                        }
+                        current = current.previousElementSibling;
+                    }
+                    return null;
+                };
+                const firstMessageDate = checkMessageContext(messages[0]);
+                if (firstMessageDate) return firstMessageDate;
+                const lastMessageDate = checkMessageContext(messages[messages.length - 1]);
+                if (lastMessageDate) return lastMessageDate;
+            }
+            return null;
+        }
+    ];
+    for (const method of extractDateMethods) {
+        try {
+            const date = method();
+            if (date) {
+                log(`Oldest date found by method: ${date.toLocaleDateString('en-GB')}`);
+                return date;
+            }
+        } catch (error) {
+            log(`Date extraction method failed: ${error.message}`);
+        }
+    }
+    log('NO DATE FOUND - Debugging information:');
+    log('Total messages: ' + document.querySelectorAll(SELECTORS.MESSAGE.container).length);
+    const debugTexts = [];
+    const elementsToDebug = document.querySelectorAll(
+        '[data-id], .x3nfvp2.xxymvpz, [data-pre-plain-text], ' + 
+        'div[role="row"] > div:first-child, span[dir="auto"]'
+    );
+    for (let i = 0; i < Math.min(10, elementsToDebug.length); i++) {
+        const el = elementsToDebug[i];
+        debugTexts.push({
+            text: el.textContent?.trim(),
+            attributes: {
+                'data-pre-plain-text': el.getAttribute('data-pre-plain-text'),
+                'title': el.getAttribute('title')
+            }
+        });
+    }
+    log('Debug texts: ' + JSON.stringify(debugTexts, null, 2));
+    return null;
+}
+
 async function scrollChatToTop(endDate) {
     const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
     if (!container) {
@@ -522,96 +869,276 @@ async function scrollChatToTop(endDate) {
     }
     let prevMessageCount = 0;
     let unchangedIterations = 0;
-    const targetDate = new Date(endDate);
-    while (unchangedIterations < 3) {
+    let consecutiveScrollFailures = 0;
+    let totalScrollFailures = 0;
+    let scrollAttempts = 0;
+    let stopScrolling = false;
+    const targetDate = endDate instanceof Date 
+        ? endDate 
+        : new Date(endDate);
+    log(`Starting to scroll to target date: ${targetDate.toLocaleDateString('en-GB')}`);
+    const originalChatTitle = document.querySelector('header span[dir="auto"]')?.textContent?.trim();
+    const checkStopScrolling = async () => {
+        const oldestDate = await findOldestVisibleDate();
+        if (!oldestDate) {
+            log('No date found, continuing scroll');
+            return false;
+        }
+        const normalizedTarget = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+        const normalizedCurrent = new Date(oldestDate.getFullYear(), oldestDate.getMonth(), oldestDate.getDate());
+        const shouldStop = normalizedCurrent <= normalizedTarget;
+        if (shouldStop) {
+            log(`STOPPING SCROLL: 
+                Oldest date found: ${oldestDate.toLocaleDateString('en-GB')}
+                Target date: ${targetDate.toLocaleDateString('en-GB')}`);
+        }
+        return shouldStop;
+    };
+    while (scrollAttempts < 200 && unchangedIterations < 5 && !stopScrolling) {
+        scrollAttempts++;
+        stopScrolling = await checkStopScrolling();
+        if (stopScrolling) {
+            log('Stopping scroll process - reached target date range');
+            break;
+        }
+        const loadOlderButtons = document.querySelectorAll('button.x14m1o6m, button.x1b9z3ur');
+        let buttonFound = false;
+        for (const button of loadOlderButtons) {
+            if (button.textContent.includes("Click here to get older messages")) {
+                log("Found 'Load older messages' button, clicking it...");
+                simulateClick(button);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                unchangedIterations = 0;
+                consecutiveScrollFailures = 0;
+                buttonFound = true;
+                break;
+            }
+        }
+        if (scrollAttempts % SCROLL_CONFIG.SCROLL_BATCH_SIZE === 0) {
+            log(`Batch pause at attempt ${scrollAttempts} to let the UI respond`);
+            await new Promise(resolve => setTimeout(resolve, SCROLL_CONFIG.SCROLL_BATCH_PAUSE));
+        }
         const messages = document.querySelectorAll(SELECTORS.MESSAGE.container);
         if (!messages || messages.length === 0) {
             log("No messages found in chat");
             await new Promise(resolve => setTimeout(resolve, 2000));
-            return;
-        }
-        const currentMessageCount = messages.length;
-        if (currentMessageCount === prevMessageCount) {
-            unchangedIterations++;
-        } else {
-            unchangedIterations = 0;
-            prevMessageCount = currentMessageCount;
-        }
-        let currentElement = messages[0];
-        if (!currentElement) {
-            log("First message element not found");
-            await new Promise(resolve => setTimeout(resolve, 1000));
             continue;
         }
-        let dateFound = false;
-        while (currentElement && !dateFound) {
-            let sibling = currentElement.previousElementSibling;
-            while (sibling && !dateFound) {
-                const siblingText = sibling.textContent?.trim() || "";
-                if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
-                    const [day, month, year] = siblingText.split('/').map(Number);
-                    const messageDate = new Date(year, month - 1, day);
-                    if (messageDate < targetDate) {
-                        return;
-                    }
-                    dateFound = true;
-                }
-                sibling = sibling.previousElementSibling;
+        const currentMessageCount = messages.length;
+        if (currentMessageCount > prevMessageCount) {
+            log(`Progress: loaded ${currentMessageCount} messages`);
+            unchangedIterations = 0;
+            consecutiveScrollFailures = 0;
+            prevMessageCount = currentMessageCount;
+        } else {
+            unchangedIterations++;
+            log(`No new messages loaded (${unchangedIterations}/5 attempts)`);
+            
+            if (!buttonFound) {
+                consecutiveScrollFailures++;
+                totalScrollFailures++;
+                log(`Scroll appears stuck: ${consecutiveScrollFailures}/${SCROLL_CONFIG.MAX_CONSECUTIVE_FAILURES} failures`);
             }
-            currentElement = currentElement.parentElement;
         }
         try {
             if (messages[0]) {
-                messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                if (container.scrollTop > 1000) {
-                    container.scrollTop -= 1000;
+                if (consecutiveScrollFailures === 0) {
+                    const scrollVariation = scrollAttempts % 4;
+                    if (scrollVariation === 0) {
+                        messages[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        if (container.scrollTop > 1000) {
+                            container.scrollTop -= 1000;
+                        }
+                    } else if (scrollVariation === 1) {
+                        container.scrollTop = 0;
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                    } else if (scrollVariation === 2) {
+                        messages[0].scrollIntoView({ block: 'start' });
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                    } else {
+                        messages[0].scrollIntoView({ behavior: 'auto', block: 'center' });
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        container.scrollTop = 0;
+                    }
+                } else if (consecutiveScrollFailures <= SCROLL_CONFIG.MAX_CONSECUTIVE_FAILURES) {
+                    log(`Using alternative scrolling method (attempt ${consecutiveScrollFailures})`);
+                    
+                    if (consecutiveScrollFailures === 1) {
+                        messages[0].scrollIntoView({ block: 'start' });
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        container.scrollTop -= 1500;
+                    } else if (consecutiveScrollFailures === 2) {
+                        log("Clicking near the top to activate scrolling");
+                        const topArea = messages[0];
+                        if (topArea) {
+                            simulateClick(topArea);
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        }
+                        container.scrollTop = 0;
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    } else {
+                        log("Using DOM manipulation to unstick scrolling");
+                        const originalHeight = container.style.height;
+                        const originalOverflow = container.style.overflow;
+                        container.style.height = '99%';
+                        container.style.overflow = 'hidden';
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        container.style.height = originalHeight;
+                        container.style.overflow = originalOverflow;
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        container.scrollTop = 0;
+                    }
+                } else {
+                    log("Too many scroll failures, applying emergency scroll reset");
+                    const resetSuccessful = await attemptChatReset(originalChatTitle);
+                    if (!resetSuccessful) {
+                        for (let i = 0; i < 5; i++) {
+                            const randomScroll = Math.floor(Math.random() * 1000);
+                            container.scrollTop = randomScroll;
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                        }
+                        container.scrollTop = 0;
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                    consecutiveScrollFailures = 1;
                 }
             }
         } catch (scrollError) {
             log(`Scroll error: ${scrollError.message}`);
+            consecutiveScrollFailures++;
+            totalScrollFailures++;
         }
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        const randomDelay = Math.floor(Math.random() * 500) + 500;
+        await new Promise(resolve => setTimeout(resolve, randomDelay));
+        if (totalScrollFailures > SCROLL_CONFIG.MAX_TOTAL_FAILURES) {
+            log(`Reached maximum total failures (${totalScrollFailures}), applying last resort recovery`);
+            await applyLastResortRecovery(container);
+            totalScrollFailures = 0;
+        }
+        stopScrolling = await checkStopScrolling();
+        if (stopScrolling) {
+            log('Stopping scroll process - reached target date range');
+            break;
+        }
+    }
+    if (scrollAttempts >= 200) {
+        log(`Reached maximum scroll attempts (200), continuing with available messages`);
+    } else if (unchangedIterations >= 5) {
+        log(`Stopped scrolling after ${scrollAttempts} attempts due to no message count changes`);
+    } else if (stopScrolling) {
+        log(`Stopped scrolling due to reaching target date`);
     }
 }
-
-async function getMessageDate(message) {
-    const dateElement = message.previousElementSibling;
-    if (dateElement && dateElement.matches(SELECTORS.MESSAGE.dateHeader)) {
-        const dateText = dateElement.textContent.trim();
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateText)) {
-            const [day, month, year] = dateText.split('/').map(Number);
-            return new Date(year, month - 1, day);
-        }
-    }
-    return null;
+  
+async function attemptChatReset(chatTitle) {
+      if (!chatTitle) {
+          log("Can't reset chat - no chat title found");
+          return false;
+      }
+      log(`Attempting to reset chat view for: ${chatTitle}`);
+      try {
+          const headerBackButton = document.querySelector('[data-icon="back"], [aria-label="Back"]');
+          if (headerBackButton) {
+              log("Clicking back button to return to chat list");
+              simulateClick(headerBackButton);
+              await new Promise(resolve => setTimeout(resolve, 1500));
+              const chatList = document.querySelector(SELECTORS.CHAT_LIST.container);
+              if (chatList) {
+                  const chatItems = chatList.querySelectorAll(SELECTORS.CHAT_LIST.messages);
+                  let foundChat = null;
+                  for (const chat of chatItems) {
+                      const titleElement = chat.querySelector(SELECTORS.CHAT.title);
+                      const chatTitle = titleElement?.textContent || titleElement?.getAttribute('title');
+                      if (chatTitle && chatTitle.includes(chatTitle)) {
+                          foundChat = chat;
+                          break;
+                      }
+                  }
+                  if (foundChat) {
+                      log(`Found original chat, clicking to reopen`);
+                      simulateClick(foundChat);
+                      await new Promise(resolve => setTimeout(resolve, 2000));
+                      try {
+                          await waitForElement(SELECTORS.CHAT.messageContainer, 5000);
+                          log("Successfully reset chat view");
+                          return true;
+                      } catch (e) {
+                          log("Chat loaded but message container not found");
+                      }
+                  } else {
+                      log(`Could not find original chat ${chatTitle} in chat list`);
+                  }
+              } else {
+                  log("Could not find chat list after clicking back");
+              }
+          } else {
+              log("No back button found, trying alternative reset");
+              const appWrapper = document.querySelector('#app, .app-wrapper-web');
+              if (appWrapper) {
+                  // Force a repaint
+                  appWrapper.style.opacity = '0.99';
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                  appWrapper.style.opacity = '1';
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  
+                  return true;
+              }
+          }
+      } catch (error) {
+          log(`Reset chat view error: ${error.message}`);
+      }
+      
+      return false;
 }
 
-function processMessages(messages, chatTitle, mediaContent) {
-    let content = [
-        '\n\n===========================================',
-        `Chat Export: ${chatTitle.toUpperCase()}`,
-        `Date: ${new Date().toLocaleDateString('en-GB')}`,
-        `Messages: ${messages.length}`,
-        'Media Summary:',
-        `- Images: ${mediaContent.images.length}`,
-        `- Videos: ${mediaContent.videos.length}`,
-        `- Documents: ${mediaContent.documents.size}`,
-        `- Links: ${mediaContent.links.size}`,
-        '===========================================\n\n'
-    ].join('\n');
-    messages.forEach(msg => {
-        const text = msg.querySelector(SELECTORS.MESSAGE.text);
-        const time = msg.querySelector(SELECTORS.MESSAGE.timestamp)?.textContent.trim() || '';
-        if (text) {
-            content += [
-                `[${new Date().toLocaleDateString('en-GB')} ${time}] ${msg.matches('div.message-out') ? 'Me' : chatTitle}:`,
-                `>>> ${text.textContent.trim()}`,
-                msg.querySelector('img[src^="blob:"], video[src^="blob:"], [data-icon="document"]') ? '[Contains media]\n' : '',
-                '-------------------------------------------\n\n'
-            ].join('\n');
-        }
-    });
-    return content;
+async function applyLastResortRecovery(container) {
+      log("Applying last resort recovery techniques");
+      try {
+          if (container) {
+              container.style.display = 'none';
+              await new Promise(resolve => setTimeout(resolve, 500));
+              container.style.display = '';
+              await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          const appComponent = document.querySelector('#app');
+          if (appComponent) {
+              appComponent.classList.add('temp-recovery-class');
+              await new Promise(resolve => setTimeout(resolve, 500));
+              appComponent.classList.remove('temp-recovery-class');
+          }
+          const originalZoom = document.body.style.zoom;
+          document.body.style.zoom = '99%';
+          await new Promise(resolve => setTimeout(resolve, 500));
+          document.body.style.zoom = originalZoom || '100%';
+          document.dispatchEvent(new Event('resize'));
+          window.dispatchEvent(new Event('resize'));
+          if (container) {
+              for (let i = 0; i < 3; i++) {
+                  const rect = container.getBoundingClientRect();
+                  const x = rect.left + Math.random() * rect.width;
+                  const y = rect.top + Math.random() * rect.height;
+                  container.dispatchEvent(new MouseEvent('mousedown', {
+                      bubbles: true, cancelable: true, view: window,
+                      clientX: x, clientY: y
+                  }));
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                  container.dispatchEvent(new MouseEvent('mouseup', {
+                      bubbles: true, cancelable: true, view: window,
+                      clientX: x, clientY: y
+                  }));
+                  await new Promise(resolve => setTimeout(resolve, 100));
+              }
+          }
+          if (container) {
+              container.scrollTop = 0;
+          }
+          log("Last resort recovery completed");
+          return true;
+      } catch (error) {
+          log(`Last resort recovery error: ${error.message}`);
+          return false;
+      }
 }
 
 const log = msg => {
@@ -623,15 +1150,6 @@ const downloadMedia = async (blob, filename) => {
     chrome.runtime.sendMessage({
         action: "downloadMedia",
         data: { url: URL.createObjectURL(blob), filename, type: blob.type }
-    });
-};
-
-const updateProgress = (current, total, chatTitle) => {
-    chrome.runtime.sendMessage({
-        action: "mediaProgress",
-        progress: Math.round((current / total) * 100),
-        chat: chatTitle,
-        mediaCount: current
     });
 };
 
@@ -647,20 +1165,6 @@ const simulateClick = element => {
         }))
     );
 };
-
-async function processMediaItem(url, chatTitle, index, type) {
-        try {
-            const response = await fetch(url);
-            const blob = await response.blob();
-            return {
-                blob,
-                filename: `${chatTitle}/${type}/${index + 1}${type === 'images' ? '.jpg' : '.mp4'}`
-            };
-        } catch (error) {
-            log(`Media processing error: ${error.message}`);
-            return null;
-        }
-}
 
 const getChatsList = async () => {
     const container = await waitForElement(SELECTORS.CHAT_LIST.container);
@@ -683,230 +1187,6 @@ const getChatsList = async () => {
         })
         .filter(chat => chat !== null);
 };
-
-async function scrollAndCollectMedia(type) {
-    const container = document.querySelector(SELECTORS.CHAT.scrollContainer);
-    if (!container) throw new Error('No scroll container');
-    const mediaItems = new Map();
-    let lastHeight = container.scrollHeight;
-    let unchangedCount = 0;
-    const collectCurrentView = () => {
-        const selector = SELECTORS.MEDIA_ELEMENTS[type];
-        document.querySelectorAll(selector).forEach(el => {
-            if (type === 'documents') {
-                const button = el.closest('[role="button"][title*="Download"]') || el;
-                if (button) {
-                    const title = button.getAttribute('title') || '';
-                    const uniqueId = title.replace(/\s*\(\d+\)\s*/, '').trim();
-                    if (!mediaItems.has(uniqueId)) {
-                        mediaItems.set(uniqueId, button);
-                    }
-                }
-            } else if (type === 'links') {
-                const url = el.href || el.getAttribute('data-url');
-                if (url?.startsWith('http')) mediaItems.set(url, url);
-            } else {
-                const url = el.src || el.style.backgroundImage?.match(/url\("(.+)"\)/)?.[1];
-                if (url?.startsWith('blob:')) mediaItems.set(url, url);
-            }
-        });
-    };
-    container.scrollTop = 0;
-    await new Promise(resolve => setTimeout(resolve, 500));
-    for (let i = 0; i < 50 && unchangedCount < 5; i++) {
-        collectCurrentView();
-        container.scrollTop += 500;
-        await new Promise(resolve => setTimeout(resolve, 300));
-        const currentHeight = container.scrollHeight;
-        if (Math.abs(currentHeight - lastHeight) < 10) {
-            unchangedCount++;
-        } else {
-            unchangedCount = 0;
-            lastHeight = currentHeight;
-        }
-    }
-    return Array.from(type === 'documents' ? mediaItems.values() : mediaItems.keys());
-}
-
-async function collectAllMedia(chatTitle,endDate) {
-    const mediaContent = {
-        images: [], videos: [],
-        documents: new Set(),
-        links: new Set()
-    };
-    await scrollChatToTop(endDate);
-    const exportFolder = generateExportFolderName(chatTitle);
-    for (const type of Object.keys(mediaContent)) {
-        try {
-            const items = await scrollAndCollectMedia(type);
-            for (let [index, item] of items.entries()) {
-                try {
-                    switch(type) {
-                        case 'images':
-                        case 'videos':
-                            const ext = type === 'images' ? '.jpg' : '.mp4';
-                            const filename = `${exportFolder}/${type}/${index + 1}${ext}`;
-                            const response = await fetch(item);
-                            const blob = await response.blob();
-                            await downloadMedia(blob, filename);
-                            mediaContent[type].push(item);
-                            break; 
-                        case 'documents':
-                            const docResult = await processDocument(item, chatTitle, index, exportFolder);
-                            if (docResult) mediaContent.documents.add(docResult);
-                            await new Promise(resolve => setTimeout(resolve, 200));
-                            break;
-                        case 'links':
-                            mediaContent.links.add(item);
-                            break;
-                    }
-                    updateProgress(index + 1, items.length, chatTitle);
-                } catch (error) {
-                    log(`Error processing ${type} ${index}: ${error.message}`);
-                }
-            }
-        } catch (error) {
-            log(`Error collecting ${type}: ${error.message}`);
-        }
-    }
-    return mediaContent;
-}
-
-async function processDocument(button, chatTitle, index, exportFolder)  {
-    const title = button.getAttribute('title') || '';
-    const cleanTitle = title.replace(/\s*\(\d+\)\s*/, '');
-    const filename = `${exportFolder}/documents/${cleanTitle}`;
-    if (!processedFiles.has(filename)) {
-        processedFiles.add(filename);
-        await simulateClick(button);
-        return filename;
-    }
-    return null;
-}
-
-async function collectMessages(chatTitle) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    console.log('Starting message collection...');
-    const messages = document.querySelectorAll('div.message-in, div.message-out');
-    console.log('Found messages:', messages.length);
-    const uniqueMessages = new Set();
-    const processedMessages = [];
-    const getDateFromRelative = (text, time) => {
-        const [hours, minutes] = time.split(':').map(Number);
-        const today = new Date();
-        today.setHours(hours, minutes, 0, 0);      
-        const yesterday = new Date(today);
-        yesterday.setDate(today.getDate() - 1);
-        text = text.toLowerCase().trim();
-        if (text === 'yesterday' || text === 'ieri') {
-            return yesterday;
-        } else if (text === 'today' || text === 'oggi') {
-            return today;
-        }
-        return null;
-    };
-    const weekdayToDate = (weekday, time) => {
-        const weekdays = {
-            'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
-            'thursday': 4, 'friday': 5, 'saturday': 6,
-            'domenica': 0, 'lunedì': 1, 'martedì': 2, 'mercoledì': 3,
-            'giovedì': 4, 'venerdì': 5, 'sabato': 6
-        };
-        const today = new Date();
-        const [hours, minutes] = time.split(':').map(Number);
-        const targetWeekday = weekdays[weekday.toLowerCase()];
-        if (targetWeekday !== undefined) {
-            const diff = targetWeekday - today.getDay();
-            const targetDate = new Date(today);
-            targetDate.setDate(today.getDate() + diff);
-            targetDate.setHours(hours, minutes, 0, 0);
-            if (targetDate > today) {
-                targetDate.setDate(targetDate.getDate() - 7);
-            }
-            return targetDate;
-        }
-        return null;
-    };
-    const getMessageTimestamp = (dateInfo, time) => {
-        if (typeof dateInfo === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(dateInfo)) {
-            const [day, month, year] = dateInfo.split('/').map(Number);
-            const [hours, minutes] = time.split(':').map(Number);
-            return new Date(year, month - 1, day, hours, minutes).getTime();
-        } else if (dateInfo instanceof Date) {
-            return dateInfo.getTime();
-        }
-        return null;
-    };
-    messages.forEach(msg => {
-        const text = msg.querySelector('.selectable-text.copyable-text')?.textContent.trim();
-        const timeElement = msg.querySelector('.x3nfvp2.xxymvpz');      
-        if (text && timeElement) {
-            const timeText = timeElement.textContent.trim();
-            let dateInfo = null;
-            let currentElement = msg;
-            while (currentElement && !dateInfo) {
-                let sibling = currentElement.previousElementSibling;
-                while (sibling && !dateInfo) {
-                    const siblingText = sibling.textContent.trim();                    
-                    if (/^\d{2}\/\d{2}\/\d{4}$/.test(siblingText)) {
-                        dateInfo = siblingText;
-                    } else if (/^(yesterday|ieri|today|oggi)$/i.test(siblingText)) {
-                        const date = getDateFromRelative(siblingText, timeText);
-                        if (date) dateInfo = date;
-                    } else if (/^(sunday|monday|tuesday|wednesday|thursday|friday|saturday|domenica|lunedì|martedì|mercoledì|giovedì|venerdì|sabato)$/i.test(siblingText)) {
-                        const date = weekdayToDate(siblingText, timeText);
-                        if (date) dateInfo = date;
-                    }
-                    sibling = sibling.previousElementSibling;
-                }
-                currentElement = currentElement.parentElement;
-            }
-            if (!dateInfo && timeElement.title) {
-                const titleMatch = timeElement.title.match(/(\d{2}\/\d{2}\/\d{4})/);
-                if (titleMatch) {
-                    dateInfo = titleMatch[1];
-                }
-            }         
-            const timestamp = getMessageTimestamp(dateInfo, timeText);
-            if (timestamp) {
-                const messageDate = new Date(timestamp).toLocaleDateString('en-GB');
-                const messageId = `${timeText}-${msg.matches('div.message-out') ? 'out' : 'in'}-${text.substring(0, 50)}`;
-                if (!uniqueMessages.has(messageId)) {
-                    uniqueMessages.add(messageId);
-                    processedMessages.push({
-                        text,
-                        time: timeText,
-                        date: messageDate,
-                        timestamp,
-                        type: msg.matches('div.message-out') ? 'out' : 'in',
-                        hasMedia: !!msg.querySelector('img[src^="blob:"], video[src^="blob:"], [data-icon="document"]')
-                    });
-                }
-            }
-        }
-    });
-    console.log('Processed messages:', processedMessages.length);
-    processedMessages.sort((a, b) => a.timestamp - b.timestamp);
-    let content = [
-        '\n===========================================',
-        `Chat Export: ${chatTitle.toUpperCase()}`,
-        `Messages: ${processedMessages.length}`,
-        `Date Range: ${processedMessages[0]?.date || 'N/A'} - ${processedMessages[processedMessages.length-1]?.date || 'N/A'}`,
-        '===========================================\n\n'
-    ].join('\n');
-    processedMessages.forEach(msg => {
-        content += [
-            `[${msg.date} ${msg.time}] ${msg.type === 'out' ? 'Me' : chatTitle}:`,
-            `>>> ${msg.text}`,
-            msg.hasMedia ? '[Contains media]\n' : '',
-            '-------------------------------------------\n\n'
-        ].join('\n');
-    });
-    return {
-        content,
-        count: processedMessages.length
-    };
-}
 
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -942,4 +1222,5 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 log('Content script loaded');
 initialize();
+
 }
