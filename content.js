@@ -213,6 +213,7 @@ async function automateWhatsAppExport(selectedChats, endDate) {
     }
 }
 
+// Modified splitHtmlByMonthYear function with completeness based on previous month detection
 async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(fullHtml, 'text/html');
@@ -221,6 +222,7 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
         log('Could not find container for splitting');
         return { success: false };
     }
+
     function getMonthName(monthNum) {
         const months = [
             'January', 'February', 'March', 'April', 'May', 'June',
@@ -228,34 +230,73 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
         ];
         return months[monthNum - 1];
     }
+
+    function parseDate(dateString) {
+        const [day, month, year] = dateString.split('/').map(Number);
+        return new Date(year, month - 1, day);
+    }
+
     const allElements = Array.from(container.children).filter((el, index) => {
         return index > 0 || !el.classList.contains('nostalgic-header');
     });
+
     const monthYearGroups = {};
     let currentMonthYear = null;
     let currentElements = [];
+    let monthDetails = {
+        firstMessageDate: null,
+        lastMessageDate: null,
+        firstActualDay: null,
+        lastActualDay: null
+    };
+
+    // First pass - collect all months and their messages
     for (let i = 0; i < allElements.length; i++) {
         const element = allElements[i];
         const dateText = element.textContent?.trim();
+        
         if (dateText && /^\d{2}\/\d{2}\/\d{4}$/.test(dateText)) {
-            const [day, month, year] = dateText.split('/').map(Number);
-            const monthYear = `${getMonthName(month)}${year}`;
+            const currentDate = parseDate(dateText);
+            const monthYear = `${getMonthName(currentDate.getMonth() + 1)}${currentDate.getFullYear()}`;
+            
+            // If we're starting a new month group
             if (monthYear !== currentMonthYear) {
-                if (currentMonthYear && currentElements.length > 0) {
-                    monthYearGroups[currentMonthYear] = currentElements;
+                // Save previous month's group if it exists
+                if (currentMonthYear && currentElements.length > 0 && monthDetails.firstMessageDate) {
+                    monthYearGroups[currentMonthYear] = {
+                        elements: currentElements,
+                        details: {...monthDetails}
+                    };
                 }
+                
+                // Reset for new month
                 currentMonthYear = monthYear;
                 currentElements = [element];
+                monthDetails = {
+                    firstMessageDate: currentDate,
+                    lastMessageDate: currentDate,
+                    firstActualDay: currentDate.getDate(),
+                    lastActualDay: currentDate.getDate()
+                };
             } else {
                 currentElements.push(element);
+                monthDetails.lastMessageDate = currentDate;
+                monthDetails.lastActualDay = currentDate.getDate();
             }
         } else if (currentMonthYear) {
             currentElements.push(element);
         }
     }
-    if (currentMonthYear && currentElements.length > 0) {
-        monthYearGroups[currentMonthYear] = currentElements;
+
+    // Add the last month group
+    if (currentMonthYear && currentElements.length > 0 && monthDetails.firstMessageDate) {
+        monthYearGroups[currentMonthYear] = {
+            elements: currentElements,
+            details: {...monthDetails}
+        };
     }
+
+    // Sort month years chronologically
     const monthYears = Object.keys(monthYearGroups).sort((a, b) => {
         const yearA = parseInt(a.match(/\d{4}$/)[0]);
         const yearB = parseInt(b.match(/\d{4}$/)[0]);
@@ -266,31 +307,135 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
                       'July', 'August', 'September', 'October', 'November', 'December'];
         return months.indexOf(monthA) - months.indexOf(monthB);
     });
-    const results = [];
-    for (const monthYear of monthYears) {
-        const monthDoc = parser.parseFromString(fullHtml, 'text/html');
-        const monthContainer = monthDoc.querySelector('#time-capsule-container');
-        while (monthContainer.firstChild) {
-            monthContainer.removeChild(monthContainer.firstChild);
-        }
-        const header = monthDoc.createElement('div');
-        header.className = 'nostalgic-header';
-        header.textContent = chatTitle+' - '+monthYear;
-        monthContainer.appendChild(header);
-        const elements = monthYearGroups[monthYear];
-        elements.forEach(element => {
-            monthContainer.appendChild(element.cloneNode(true));
-        });
-        const monthHtml = monthDoc.documentElement.outerHTML;
-        const monthBlob = new Blob([monthHtml], { type: 'text/html' });
-        await downloadMedia(monthBlob, `${exportFolder}/${monthYear}.html`);
-        results.push(monthYear);
-        log(`Generated monthly segment: ${monthYear} with ${elements.length} elements`);
+
+    // Second pass - determine completeness based on previous month
+    // Let's create a map of which months are considered complete
+    const completeMonths = {};
+    
+    // Sort chronologically (oldest first)
+    const sortedMonthYears = [...monthYears].sort((a, b) => {
+        const yearA = parseInt(a.match(/\d{4}$/)[0]);
+        const yearB = parseInt(b.match(/\d{4}$/)[0]);
+        if (yearA !== yearB) return yearA - yearB;
+        const monthA = a.replace(/\d{4}$/, '');
+        const monthB = b.replace(/\d{4}$/,'');
+        const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+        return months.indexOf(monthA) - months.indexOf(monthB);
+    });
+    
+    // Create map of month to its index
+    const monthToIndex = {};
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                  'July', 'August', 'September', 'October', 'November', 'December'];
+    months.forEach((month, index) => {
+        monthToIndex[month] = index;
+    });
+    
+    // Find earliest month - this can't be verified complete by looking at earlier months
+    if (sortedMonthYears.length > 0) {
+        const earliestMonth = sortedMonthYears[0];
+        log(`Earliest found month: ${earliestMonth}`);
     }
+    
+    // For each month, check if previous month exists
+    for (let i = 0; i < sortedMonthYears.length; i++) {
+        const currentMonthYear = sortedMonthYears[i];
+        const currentYearStr = currentMonthYear.match(/\d{4}$/)[0];
+        const currentYear = parseInt(currentYearStr);
+        const currentMonth = currentMonthYear.replace(/\d{4}$/, '');
+        const currentMonthIndex = monthToIndex[currentMonth];
+        
+        // Calculate previous month
+        let prevMonthIndex = currentMonthIndex - 1;
+        let prevYear = currentYear;
+        if (prevMonthIndex < 0) {
+            prevMonthIndex = 11; // December
+            prevYear = currentYear - 1;
+        }
+        const prevMonth = months[prevMonthIndex];
+        const prevMonthYear = `${prevMonth}${prevYear}`;
+        
+        // Check if we have the previous month in our data
+        if (monthYearGroups[prevMonthYear]) {
+            // If previous month exists in our data, then current month is complete
+            completeMonths[currentMonthYear] = true;
+            log(`Marking ${currentMonthYear} as complete because previous month ${prevMonthYear} is present`);
+        } else {
+            // For the earliest month, we'll consider it complete if it has the first day
+            if (i === 0) {
+                const details = monthYearGroups[currentMonthYear].details;
+                if (details.firstActualDay === 1) {
+                    completeMonths[currentMonthYear] = true;
+                    log(`Marking earliest month ${currentMonthYear} as complete because it starts on day 1`);
+                } else {
+                    log(`Earliest month ${currentMonthYear} starts on day ${details.firstActualDay}, not day 1 - marking as incomplete`);
+                }
+            } else {
+                log(`Month ${currentMonthYear} does not have previous month ${prevMonthYear} - marking as incomplete`);
+            }
+        }
+    }
+    
+    // Also mark the most recent month (likely the current month) as complete if it has substantial content
+    if (sortedMonthYears.length > 0) {
+        const mostRecentMonth = sortedMonthYears[sortedMonthYears.length - 1];
+        const details = monthYearGroups[mostRecentMonth].details;
+        const messageCount = monthYearGroups[mostRecentMonth].elements.filter(el => 
+            el.classList && (el.classList.contains('message-in') || el.classList.contains('message-out'))
+        ).length;
+        
+        // If not already marked complete and has good amount of content
+        if (!completeMonths[mostRecentMonth] && messageCount >= 10) {
+            completeMonths[mostRecentMonth] = true;
+            log(`Marking most recent month ${mostRecentMonth} as complete because it has ${messageCount} messages`);
+        }
+    }
+
+    const results = [];
+    const processedMonths = [];
+
+    // Process all months that are considered complete
+    for (const monthYear of monthYears) {
+        if (completeMonths[monthYear]) {
+            const { elements } = monthYearGroups[monthYear];
+            const monthDoc = parser.parseFromString(fullHtml, 'text/html');
+            const monthContainer = monthDoc.querySelector('#time-capsule-container');
+            
+            // Clear existing content
+            while (monthContainer.firstChild) {
+                monthContainer.removeChild(monthContainer.firstChild);
+            }
+
+            // Add header
+            const header = monthDoc.createElement('div');
+            header.className = 'nostalgic-header';
+            header.textContent = `${chatTitle} - ${monthYear}`;
+            monthContainer.appendChild(header);
+
+            // Add month's elements
+            elements.forEach(element => {
+                monthContainer.appendChild(element.cloneNode(true));
+            });
+
+            const monthHtml = monthDoc.documentElement.outerHTML;
+            const monthBlob = new Blob([monthHtml], { type: 'text/html' });
+            
+            await downloadMedia(monthBlob, `${exportFolder}/${monthYear}.html`);
+            
+            results.push(monthYear);
+            processedMonths.push(monthYear);
+            
+            log(`Generated monthly segment: ${monthYear} (Complete)`);
+        } else {
+            log(`Skipping incomplete month: ${monthYear}`);
+        }
+    }
+
     return {
-        success: true,
-        monthYears: results,
-        count: monthYears.length
+        success: results.length > 0,
+        monthYears: processedMonths,
+        count: results.length
     };
 }
 
