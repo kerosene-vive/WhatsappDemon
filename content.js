@@ -347,7 +347,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             .join('\n');
         const headerHtml = `
             <div class="nostalgic-header">
-                <span class="header-emoji">✨</span> ${chatTitle} <span class="header-emoji">✨</span>
+                <span class="header-emoji">💫</span> ${chatTitle} <span class="header-emoji">💭</span>
             </div>
         `;
         const fullPageHTML = `<!DOCTYPE html>
@@ -361,8 +361,8 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 ${capturedStyles}
                 :root {
                     --bg-color: #f0f2f5;
-                    --header-bg: #ffffff;
-                    --header-text: #128c7e;
+                    --header-bg: #d9fdd3;
+                    --header-text: #0b806a;
                     --bubble-in: #ffffff;
                     --bubble-out: #d9fdd3;
                     --text-color: #111b21;
@@ -391,7 +391,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 }
                 .nostalgic-header {
                     text-align: center;
-                    padding: 15px;
+                    padding: 15px 10px;
                     font-size: 20px;
                     font-weight: bold;
                     border-bottom: 1px solid rgba(0,0,0,0.1);
@@ -410,10 +410,20 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                     will-change: transform;
                     -webkit-backface-visibility: hidden;
                     backface-visibility: hidden;
+                    letter-spacing: 0.5px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
                 }
                 .header-emoji {
                     font-size: 18px;
-                    vertical-align: middle;
+                    margin: 0 6px;
+                    animation: float 2s infinite ease-in-out alternate;
+                }
+                
+                @keyframes float {
+                    0% { transform: translateY(0px); }
+                    100% { transform: translateY(-3px); }
                 }
                 #time-capsule-container {
                     max-width: 600px;
@@ -529,13 +539,14 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                     position: relative;
                 }
                 .chat-date-text {
-                    background: var(--bg-color);
+                    background: var(--header-bg);
                     padding: 5px 10px;
                     border-radius: 12px;
                     font-size: 12px;
                     display: inline-block;
                     box-shadow: var(--shadow);
-                    color: var(--meta-text);
+                    color: var(--header-text);
+                    font-weight: 500;
                 }
                 /* Theme toggle */
                 .theme-toggle {
@@ -613,7 +624,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                                     currentDate = dateMatch[0];
                                     const separator = document.createElement('div');
                                     separator.className = 'chat-date-separator';
-                                    separator.innerHTML = \`<span class="chat-date-text">\${currentDate}</span>\`;
+                                    separator.innerHTML = \`<span class="chat-date-text">🗓️ \${currentDate} 🗓️</span>\`;
                                     message.parentNode.insertBefore(separator, message);
                                 }
                             }
