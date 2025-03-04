@@ -347,80 +347,153 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             .join('\n');
         const headerHtml = `
             <div class="nostalgic-header">
-                ${chatTitle} - WhatsApp Memories
+                <span class="header-emoji">✨</span> ${chatTitle} <span class="header-emoji">✨</span>
             </div>
         `;
         const fullPageHTML = `<!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <title>${chatTitle}</title>
+            <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
             <style>
                 ${capturedStyles}
+                :root {
+                    --bg-color: #f0f2f5;
+                    --header-bg: #ffffff;
+                    --header-text: #128c7e;
+                    --bubble-in: #ffffff;
+                    --bubble-out: #d9fdd3;
+                    --text-color: #111b21;
+                    --meta-text: #667781;
+                    --border-radius: 12px;
+                    --shadow: 0 1px 3px rgba(0,0,0,0.08);
+                }
+                [data-theme="dark"] {
+                    --bg-color: #111b21;
+                    --header-bg: #202c33;
+                    --header-text: #00a884;
+                    --bubble-in: #202c33;
+                    --bubble-out: #005c4b;
+                    --text-color: #e9edef;
+                    --meta-text: #8696a0;
+                }
                 body, html {
                     margin: 0;
                     padding: 0;
                     height: 100%;
-                    overflow: hidden;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    background-color: var(--bg-color);
+                    color: var(--text-color);
+                    line-height: 1.5;
+                    -webkit-text-size-adjust: 100%;
                 }
                 .nostalgic-header {
                     text-align: center;
                     padding: 15px;
-                    font-size: 24px;
+                    font-size: 20px;
                     font-weight: bold;
-                    border-bottom: 2px solid #ccc;
+                    border-bottom: 1px solid rgba(0,0,0,0.1);
                     margin-bottom: 10px;
-                    position: sticky;
+                    position: fixed;
                     top: 0;
-                    background: #f0f0f0;
+                    left: 0;
+                    right: 0;
+                    width: 100%;
+                    background: var(--header-bg);
                     z-index: 100;
+                    color: var(--header-text);
+                    box-shadow: var(--shadow);
+                    border-radius: 0;
+                    transform: translateZ(0);
+                    will-change: transform;
+                    -webkit-backface-visibility: hidden;
+                    backface-visibility: hidden;
+                }
+                .header-emoji {
+                    font-size: 18px;
+                    vertical-align: middle;
                 }
                 #time-capsule-container {
+                    max-width: 600px;
+                    margin: 0 auto;
                     height: 100vh;
                     overflow-y: auto;
                     position: relative;
+                    padding: 0 10px;
+                    box-sizing: border-box;
+                    scroll-behavior: smooth;
+                    -webkit-overflow-scrolling: touch;
+                }
+                /* Message bubble improvements */
+                .message-in, .message-out {
+                    margin: 8px 0 !important;
+                    padding: 8px 12px !important;
+                    border-radius: var(--border-radius) !important;
+                    box-shadow: var(--shadow) !important;
+                    max-width: 80% !important;
+                    word-wrap: break-word !important;
+                    position: relative !important;
+                }
+                .message-in {
+                    background-color: var(--bubble-in) !important;
+                    margin-right: auto !important;
+                    border-top-left-radius: 0 !important;
+                }
+                .message-out {
+                    background-color: var(--bubble-out) !important;
+                    margin-left: auto !important;
+                    border-top-right-radius: 0 !important;
+                }
+                /* Message meta (time, status) */
+                .message-meta {
+                    font-size: 11px !important;
+                    color: var(--meta-text) !important;
+                    text-align: right !important;
+                    margin-top: 3px !important;
                 }
                 /* Audio message styling */
                 .message-in .audio-player, .message-out .audio-player {
-                    border-radius: 7.5px;
+                    border-radius: 10px;
                     display: flex;
                     align-items: center;
-                    padding: 6px 10px;
+                    padding: 8px 12px;
                     position: relative;
                 }
                 .message-in .audio-player {
-                    background-color: #fff;
+                    background-color: var(--bubble-in);
                 }
                 .message-out .audio-player {
-                    background-color: #dcf8c6;
-                }
-                [data-theme="dark"] .message-in .audio-player {
-                    background-color: #063b28;
-                }
-                [data-theme="dark"] .message-out .audio-player {
-                    background-color: #025d4b;
+                    background-color: var(--bubble-out);
                 }
                 /* Play button styling */
                 .audio-play-button {
-                    width: 34px;
-                    height: 34px;
+                    width: 36px;
+                    height: 36px;
                     border-radius: 50%;
-                    background-color: #fff;
+                    background-color: var(--header-text);
+                    color: white;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    margin-right: 10px;
+                    margin-right: 12px;
+                    cursor: pointer;
+                    transition: transform 0.2s;
+                }
+                .audio-play-button:active {
+                    transform: scale(0.95);
                 }
                 /* Audio waveform styling */
                 .audio-waveform {
                     flex-grow: 1;
-                    height: 25px;
+                    height: 28px;
                     margin: 0 10px;
                     display: flex;
                     align-items: center;
                 }
                 .audio-waveform-bar {
-                    background-color: #aaa;
+                    background-color: var(--meta-text);
                     width: 2px;
                     height: 16px;
                     margin: 0 1px;
@@ -428,37 +501,166 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 }
                 /* Time counter styling */
                 .audio-time {
-                    font-size: 11px;
-                    color: #8696a0;
+                    font-size: 12px;
+                    color: var(--meta-text);
                     margin-right: 5px;
                     font-weight: 400;
                 }
-                /* Profile picture in audio messages */
-                .audio-player .profile-picture {
-                    width: 40px;
-                    height: 40px;
+                /* Profile picture styling */
+                .profile-picture {
+                    width: 36px;
+                    height: 36px;
                     border-radius: 50%;
                     overflow: hidden;
                     margin-right: 10px;
+                    border: 2px solid var(--header-text);
                 }
                 /* Ensure images are responsive */
                 #time-capsule-container img {
                     max-width: 100%;
                     height: auto;
                     object-fit: contain;
+                    border-radius: 8px;
+                }
+                /* Date separators */
+                .chat-date-separator {
+                    text-align: center;
+                    margin: 16px 0;
+                    position: relative;
+                }
+                .chat-date-text {
+                    background: var(--bg-color);
+                    padding: 5px 10px;
+                    border-radius: 12px;
+                    font-size: 12px;
+                    display: inline-block;
+                    box-shadow: var(--shadow);
+                    color: var(--meta-text);
+                }
+                /* Theme toggle */
+                .theme-toggle {
+                    position: fixed;
+                    bottom: 20px;
+                    right: 20px;
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 50%;
+                    background: var(--header-bg);
+                    color: var(--header-text);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                    cursor: pointer;
+                    z-index: 1000;
+                    border: none;
+                }
+                /* Kawaii elements */
+                .message-in::before, .message-out::before {
+                    content: '';
+                    position: absolute;
+                    width: 0;
+                    height: 0;
+                    border-style: solid;
+                }
+                .message-in::before {
+                    border-width: 0 10px 10px 0;
+                    border-color: transparent var(--bubble-in) transparent transparent;
+                    top: 0;
+                    left: -10px;
+                }
+                .message-out::before {
+                    border-width: 0 0 10px 10px;
+                    border-color: transparent transparent transparent var(--bubble-out);
+                    top: 0;
+                    right: -10px;
+                }
+                @media (max-width: 600px) {
+                    .message-in, .message-out {
+                        max-width: 85% !important;
+                    }
                 }
             </style>
         </head>
         <body>
+            ${headerHtml}
             <div id="time-capsule-container">
-                ${headerHtml}
+                <div style="padding-top: 60px;"></div>
                 ${processedContainer.innerHTML}
             </div>
+            <button class="theme-toggle" id="themeToggle">
+                <i class="fas fa-moon"></i>
+            </button>
             <script>
                 window.onload = function() {
-                    document.addEventListener('gesturestart', function (e) {
+                    // Prevent pinch zoom on mobile
+                    document.addEventListener('gesturestart', function(e) {
                         e.preventDefault();
                     });
+                    
+                    // Add date separators
+                    function addDateSeparators() {
+                        const messages = document.querySelectorAll('div.message-in, div.message-out');
+                        let currentDate = '';
+                        
+                        messages.forEach(message => {
+                            const dateMeta = message.querySelector('[data-pre-plain]');
+                            if (dateMeta) {
+                                const dateText = dateMeta.getAttribute('data-pre-plain');
+                                const dateMatch = dateText.match(/\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}/);
+                                
+                                if (dateMatch && dateMatch[0] !== currentDate) {
+                                    currentDate = dateMatch[0];
+                                    const separator = document.createElement('div');
+                                    separator.className = 'chat-date-separator';
+                                    separator.innerHTML = \`<span class="chat-date-text">\${currentDate}</span>\`;
+                                    message.parentNode.insertBefore(separator, message);
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Theme toggle functionality
+                    const themeToggle = document.getElementById('themeToggle');
+                    const icon = themeToggle.querySelector('i');
+                    
+                    themeToggle.addEventListener('click', function() {
+                        document.body.setAttribute('data-theme', 
+                            document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+                        
+                        icon.className = document.body.getAttribute('data-theme') === 'dark' 
+                            ? 'fas fa-sun' 
+                            : 'fas fa-moon';
+                    });
+                    
+                    // Fix audio player appearance
+                    const audioPlayers = document.querySelectorAll('.audio-player');
+                    audioPlayers.forEach(player => {
+                        // Add play button icon if missing
+                        const playButton = player.querySelector('.audio-play-button');
+                        if (playButton && !playButton.querySelector('i')) {
+                            playButton.innerHTML = '<i class="fas fa-play"></i>';
+                        }
+                        
+                        // Ensure waveform has bars
+                        const waveform = player.querySelector('.audio-waveform');
+                        if (waveform && waveform.children.length === 0) {
+                            for (let i = 0; i < 20; i++) {
+                                const bar = document.createElement('div');
+                                bar.className = 'audio-waveform-bar';
+                                bar.style.height = \`\${Math.floor(Math.random() * 20) + 5}px\`;
+                                waveform.appendChild(bar);
+                            }
+                        }
+                    });
+                    
+                    // Add message timestamps class for styling
+                    document.querySelectorAll('[data-pre-plain]').forEach(meta => {
+                        meta.classList.add('message-meta');
+                    });
+                    
+                    // Run setup functions
+                    addDateSeparators();
                 }
             </script>
         </body>
