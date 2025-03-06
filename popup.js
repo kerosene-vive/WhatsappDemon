@@ -94,32 +94,7 @@ function createChatSelectionUI() {
     return container;
 }
 
-function createDateSelectionUI() {
-    const dateSelection = document.createElement('div');
-    dateSelection.className = 'date-selection';
-    dateSelection.innerHTML = `
-        <div class="date-selection-content">
-            <h3>Time Range</h3>
-            <div class="range-selection">
-                <select id="timeRange" class="time-range-select">
-                    <option value="1month">1 Month</option>
-                    <option value="6month">6 Months</option>
-                    <option value="year">1 Year</option>
-                </select>
-            </div>
-            <div class="date-actions">
-                <button class="confirm-dates">Start Export</button>
-                <button class="cancel-dates">Back</button>
-            </div>
-        </div>
-    `;
-    const mainContent = document.querySelector('.main-content');
-    if (mainContent) {
-        mainContent.appendChild(dateSelection);
-    }
-    setupDateSelectionListeners(dateSelection);
-    return dateSelection;
-}
+
 
 function generateMonthOptions() {
     const months = [
@@ -202,39 +177,7 @@ function showPhoneRequirementDisclaimer(selectedTimeRange) {
     });
 }
 
-  function setupDateSelectionListeners(dateSelection) {
-    const confirmBtn = dateSelection.querySelector('.confirm-dates');
-    const cancelBtn = dateSelection.querySelector('.cancel-dates');
-    const rangeSelect = dateSelection.querySelector('#timeRange');
-    confirmBtn.addEventListener('click', async () => {
-      try {
-        const selectedTimeRange = rangeSelect.value;
-        const shouldContinue = await showPhoneRequirementDisclaimer(selectedTimeRange);
-        if (!shouldContinue) {
-          return;
-        }
-        const endDate = calculateEndDate(selectedTimeRange);
-        const selectedChats = [...document.querySelectorAll('.chat-item input:checked')]
-            .map(input => input.value);
-        dateSelection.classList.remove('show');
-        document.body.classList.add('loading');
-        startMessageDownload(selectedChats, {
-          endDate: formatDateForAPI(endDate),
-          displayRange: {
-            end: endDate.toLocaleDateString()
-          }
-        });
-      } catch (error) {
-        console.error('Date processing error:', error);
-        alert('Error processing dates. Please try again.');
-      }
-    });
-    cancelBtn.addEventListener('click', () => {
-      dateSelection.classList.remove('show');
-      document.querySelector('.chat-selection')?.classList.remove('hidden');
-      document.querySelector('#mainDownload')?.classList.remove('hidden');
-    });
-}
+
 
 function validateDateRange(startMonth, startYear, endMonth, endYear, confirmBtn) {
     try {
@@ -272,33 +215,6 @@ function getLastDayOfMonth(year, month) {
     return date;
 }
 
-function calculateEndDate(range) {
-    const currentDate = new Date();
-    let endDate = new Date();
-    
-    switch (range) {
-        case 'week':
-            endDate.setDate(currentDate.getDate() - 7);
-            break;
-        case 'month':
-        case '1month':
-            endDate.setMonth(currentDate.getMonth() - 1);
-            break;
-        case '6month':
-            endDate.setMonth(currentDate.getMonth() - 6);
-            break;
-        case 'year':
-            endDate.setFullYear(currentDate.getFullYear() - 1);
-            break;
-        default:
-            throw new Error('Invalid date range selected');
-    }
-    
-    if (!isValidDate(endDate)) {
-        throw new Error('Invalid date calculated');
-    }
-    return endDate;
-}
 
 function isValidDate(date) {
     return date instanceof Date && !isNaN(date);
@@ -510,6 +426,113 @@ function updateUIForDownload(elements) {
     elements.loadingFill.style.width = '20%';
 }
 
+function createDateSelectionUI() {
+    const dateSelection = document.createElement('div');
+    dateSelection.className = 'date-selection';
+    dateSelection.innerHTML = `
+        <div class="date-selection-content">
+            <h3>Time Range</h3>
+            <div class="range-selection">
+                <div class="month-slider-container">
+                    <label for="monthSlider" class="months-label">Months: <span id="monthValue">1</span></label>
+                    <input type="range" id="monthSlider" min="1" max="12" value="1" class="month-slider">
+                </div>
+            </div>
+            <div class="date-actions">
+                <button class="confirm-dates">Start Export</button>
+                <button class="cancel-dates">Back</button>
+            </div>
+        </div>
+    `;
+    const mainContent = document.querySelector('.main-content');
+    if (mainContent) {
+        mainContent.appendChild(dateSelection);
+    }
+    setupDateSelectionListeners(dateSelection);
+    
+    // Add slider event listener
+    const slider = dateSelection.querySelector('#monthSlider');
+    const monthValue = dateSelection.querySelector('#monthValue');
+    
+    slider.addEventListener('input', function() {
+        monthValue.textContent = this.value;
+    });
+    
+    return dateSelection;
+}
+
+function setupDateSelectionListeners(dateSelection) {
+    const confirmBtn = dateSelection.querySelector('.confirm-dates');
+    const cancelBtn = dateSelection.querySelector('.cancel-dates');
+    const monthSlider = dateSelection.querySelector('#monthSlider');
+    
+    confirmBtn.addEventListener('click', async () => {
+      try {
+        const selectedMonths = parseInt(monthSlider.value);
+        const selectedTimeRange = getTimeRangeFromMonths(selectedMonths);
+        const shouldContinue = await showPhoneRequirementDisclaimer(selectedTimeRange);
+        if (!shouldContinue) {
+          return;
+        }
+        const endDate = calculateEndDate(selectedTimeRange);
+        const selectedChats = [...document.querySelectorAll('.chat-item input:checked')]
+            .map(input => input.value);
+        dateSelection.classList.remove('show');
+        document.body.classList.add('loading');
+        startMessageDownload(selectedChats, {
+          endDate: formatDateForAPI(endDate),
+          displayRange: {
+            end: endDate.toLocaleDateString()
+          }
+        });
+      } catch (error) {
+        console.error('Date processing error:', error);
+        alert('Error processing dates. Please try again.');
+      }
+    });
+    
+    cancelBtn.addEventListener('click', () => {
+      dateSelection.classList.remove('show');
+      document.querySelector('.chat-selection')?.classList.remove('hidden');
+      document.querySelector('#mainDownload')?.classList.remove('hidden');
+    });
+}
+
+// Helper function to convert month count to time range format
+function getTimeRangeFromMonths(months) {
+    if (months === 1) return '1month';
+    if (months === 6) return '6month';
+    if (months === 12) return 'year';
+    return `${months}month`;  // Custom format
+}
+
+// Update calculateEndDate to handle custom month ranges
+function calculateEndDate(range) {
+    const currentDate = new Date();
+    let endDate = new Date();
+    
+    if (range === 'week') {
+        endDate.setDate(currentDate.getDate() - 7);
+    } else if (range === 'month' || range === '1month') {
+        endDate.setMonth(currentDate.getMonth() - 1);
+    } else if (range === '6month') {
+        endDate.setMonth(currentDate.getMonth() - 6);
+    } else if (range === 'year') {
+        endDate.setFullYear(currentDate.getFullYear() - 1);
+    } else if (range.endsWith('month')) {
+        // Handle custom month range
+        const months = parseInt(range.replace('month', ''));
+        endDate.setMonth(currentDate.getMonth() - months);
+    } else {
+        throw new Error('Invalid date range selected');
+    }
+    
+    if (!isValidDate(endDate)) {
+        throw new Error('Invalid date calculated');
+    }
+    return endDate;
+}
+
 
 chrome.runtime.onMessage.addListener((message) => {
     switch (message.action) {
@@ -533,6 +556,77 @@ window.addEventListener('unload', () => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
+    const style = document.createElement('style');
+     style.textContent = `
+        .month-slider-container {
+            margin: 15px 0;
+            width: 100%;
+        }
+        
+        .time-range-title {
+            color: #4a6f8b;
+            font-size: 22px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 500;
+        }
+        
+        .month-display {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        
+        .months-label {
+            font-size: 18px;
+            font-weight: 500;
+        }
+        
+        #monthValue {
+            font-size: 28px;
+            font-weight: bold;
+            color: #128C7E;
+        }
+        
+        .month-slider-container {
+            padding: 0 10px;
+            margin-bottom: 25px;
+        }
+        
+        .month-slider {
+            width: 100%;
+            height: 25px;
+            background: #f1f1f1;
+            outline: none;
+            opacity: 0.7;
+            -webkit-transition: .2s;
+            transition: opacity .2s;
+            border-radius: 5px;
+        }
+        
+        .month-slider:hover {
+            opacity: 1;
+        }
+        
+        .month-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 25px;
+            height: 25px;
+            background: #128C7E;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        
+        .month-slider::-moz-range-thumb {
+            width: 25px;
+            height: 25px;
+            background: #128C7E;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+    `;
+    document.head.appendChild(style);
+    
     initializeUI();
     setupEventListeners();
 });

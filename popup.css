@@ -83,7 +83,7 @@ body {
 .header-text {
   font-size: 28px;
   font-weight: 800;
-  color: var(--primary);
+  color: #457b9d;
 }
 .main-content {
   position: relative;
@@ -452,7 +452,7 @@ select:focus {
 }
 .date-selection h3,
 .date-selection-content h3 {
-  color: var(--primary);
+  color: #457b9d;
   font-size: 20px;
   margin: 0 0 24px 0;
   text-align: center;
