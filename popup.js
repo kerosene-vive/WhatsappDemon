@@ -90,7 +90,8 @@ function createChatSelectionUI() {
 }
 
 function showPhoneRequirementDisclaimer(selectedTimeRange) {
-    if (selectedTimeRange !== '6month' && selectedTimeRange !== 'year') {
+    const monthValue = parseInt(selectedTimeRange.replace('month', ''));
+    if (monthValue < 5) {
       return Promise.resolve(true);
     }
     return new Promise(resolve => {
@@ -518,19 +519,40 @@ function getTimeRangeFromMonths(months) {
     if (months === 1) return '1month';
     if (months === 6) return '6month';
     if (months === 12) return 'year';
+    else if (range.endsWith('month')) {
+        let months = parseInt(range.replace('month', ''));
+        months += 1;
+        endDate.setMonth(currentDate.getMonth() - months);
+    }
     return `${months}month`;
 }
 
 function calculateEndDate(range) {
     const currentDate = new Date();
     let endDate = new Date();
-    let months = parseInt(range.replace('month', ''));
-    endDate.setMonth(currentDate.getMonth() - (months + 1));
+    if (range === 'week') {
+        endDate.setDate(currentDate.getDate() - 7);
+    } else if (range === 'month' || range === '1month') {
+        endDate.setMonth(currentDate.getMonth() - 1);
+    } else if (range === '6month') {
+        endDate.setMonth(currentDate.getMonth() - 6);
+    } else if (range === 'year') {
+        endDate.setFullYear(currentDate.getFullYear() - 1);
+    } else if (range.endsWith('month')) {
+        let months = parseInt(range.replace('month', ''));
+        months += 1;
+        endDate.setMonth(currentDate.getMonth() - months);
+    } else {
+        throw new Error('Invalid date range selected');
+    }
     if (!isValidDate(endDate)) {
         throw new Error('Invalid date calculated');
     }
-    endDate = getLastDayOfMonth(endDate.getFullYear(), endDate.getMonth() + 1);
     return endDate;
+}
+
+function isValidDate(date) {
+    return date instanceof Date && !isNaN(date);
 }
 
 function getLastDayOfMonth(year, month) {
