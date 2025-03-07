@@ -213,7 +213,6 @@ async function automateWhatsAppExport(selectedChats, endDate) {
     }
 }
 
-// Modified splitHtmlByMonthYear function with completeness based on previous month detection
 async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(fullHtml, 'text/html');
@@ -222,7 +221,6 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
         log('Could not find container for splitting');
         return { success: false };
     }
-
     function getMonthName(monthNum) {
         const months = [
             'January', 'February', 'March', 'April', 'May', 'June',
@@ -230,16 +228,13 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
         ];
         return months[monthNum - 1];
     }
-
     function parseDate(dateString) {
         const [day, month, year] = dateString.split('/').map(Number);
         return new Date(year, month - 1, day);
     }
-
     const allElements = Array.from(container.children).filter((el, index) => {
         return index > 0 || !el.classList.contains('nostalgic-header');
     });
-
     const monthYearGroups = {};
     let currentMonthYear = null;
     let currentElements = [];
@@ -249,27 +244,19 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
         firstActualDay: null,
         lastActualDay: null
     };
-
-    // First pass - collect all months and their messages
     for (let i = 0; i < allElements.length; i++) {
         const element = allElements[i];
         const dateText = element.textContent?.trim();
-        
         if (dateText && /^\d{2}\/\d{2}\/\d{4}$/.test(dateText)) {
             const currentDate = parseDate(dateText);
             const monthYear = `${getMonthName(currentDate.getMonth() + 1)}${currentDate.getFullYear()}`;
-            
-            // If we're starting a new month group
             if (monthYear !== currentMonthYear) {
-                // Save previous month's group if it exists
                 if (currentMonthYear && currentElements.length > 0 && monthDetails.firstMessageDate) {
                     monthYearGroups[currentMonthYear] = {
                         elements: currentElements,
                         details: {...monthDetails}
                     };
                 }
-                
-                // Reset for new month
                 currentMonthYear = monthYear;
                 currentElements = [element];
                 monthDetails = {
@@ -287,16 +274,12 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
             currentElements.push(element);
         }
     }
-
-    // Add the last month group
     if (currentMonthYear && currentElements.length > 0 && monthDetails.firstMessageDate) {
         monthYearGroups[currentMonthYear] = {
             elements: currentElements,
             details: {...monthDetails}
         };
     }
-
-    // Sort month years chronologically
     const monthYears = Object.keys(monthYearGroups).sort((a, b) => {
         const yearA = parseInt(a.match(/\d{4}$/)[0]);
         const yearB = parseInt(b.match(/\d{4}$/)[0]);
@@ -307,12 +290,7 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
                       'July', 'August', 'September', 'October', 'November', 'December'];
         return months.indexOf(monthA) - months.indexOf(monthB);
     });
-
-    // Second pass - determine completeness based on previous month
-    // Let's create a map of which months are considered complete
     const completeMonths = {};
-    
-    // Sort chronologically (oldest first)
     const sortedMonthYears = [...monthYears].sort((a, b) => {
         const yearA = parseInt(a.match(/\d{4}$/)[0]);
         const yearB = parseInt(b.match(/\d{4}$/)[0]);
@@ -323,115 +301,74 @@ async function splitHtmlByMonthYear(fullHtml, chatTitle, exportFolder) {
                       'July', 'August', 'September', 'October', 'November', 'December'];
         return months.indexOf(monthA) - months.indexOf(monthB);
     });
-    
-    // Create map of month to its index
     const monthToIndex = {};
     const months = ['January', 'February', 'March', 'April', 'May', 'June',
                   'July', 'August', 'September', 'October', 'November', 'December'];
     months.forEach((month, index) => {
         monthToIndex[month] = index;
     });
-    
-    // Find earliest month - this can't be verified complete by looking at earlier months
     if (sortedMonthYears.length > 0) {
         const earliestMonth = sortedMonthYears[0];
         log(`Earliest found month: ${earliestMonth}`);
     }
-    
-    // For each month, check if previous month exists
     for (let i = 0; i < sortedMonthYears.length; i++) {
         const currentMonthYear = sortedMonthYears[i];
         const currentYearStr = currentMonthYear.match(/\d{4}$/)[0];
         const currentYear = parseInt(currentYearStr);
         const currentMonth = currentMonthYear.replace(/\d{4}$/, '');
         const currentMonthIndex = monthToIndex[currentMonth];
-        
-        // Calculate previous month
         let prevMonthIndex = currentMonthIndex - 1;
         let prevYear = currentYear;
         if (prevMonthIndex < 0) {
-            prevMonthIndex = 11; // December
+            prevMonthIndex = 11;
             prevYear = currentYear - 1;
         }
         const prevMonth = months[prevMonthIndex];
         const prevMonthYear = `${prevMonth}${prevYear}`;
-        
-        // Check if we have the previous month in our data
         if (monthYearGroups[prevMonthYear]) {
-            // If previous month exists in our data, then current month is complete
             completeMonths[currentMonthYear] = true;
             log(`Marking ${currentMonthYear} as complete because previous month ${prevMonthYear} is present`);
         } else {
-            // For the earliest month, we'll consider it complete if it has the first day
-            if (i === 0) {
-                const details = monthYearGroups[currentMonthYear].details;
-                if (details.firstActualDay === 1) {
-                    completeMonths[currentMonthYear] = true;
-                    log(`Marking earliest month ${currentMonthYear} as complete because it starts on day 1`);
-                } else {
-                    log(`Earliest month ${currentMonthYear} starts on day ${details.firstActualDay}, not day 1 - marking as incomplete`);
-                }
-            } else {
                 log(`Month ${currentMonthYear} does not have previous month ${prevMonthYear} - marking as incomplete`);
-            }
         }
     }
-    
-    // Also mark the most recent month (likely the current month) as complete if it has substantial content
     if (sortedMonthYears.length > 0) {
         const mostRecentMonth = sortedMonthYears[sortedMonthYears.length - 1];
-        const details = monthYearGroups[mostRecentMonth].details;
         const messageCount = monthYearGroups[mostRecentMonth].elements.filter(el => 
             el.classList && (el.classList.contains('message-in') || el.classList.contains('message-out'))
         ).length;
-        
-        // If not already marked complete and has good amount of content
         if (!completeMonths[mostRecentMonth] && messageCount >= 10) {
             completeMonths[mostRecentMonth] = true;
             log(`Marking most recent month ${mostRecentMonth} as complete because it has ${messageCount} messages`);
         }
     }
-
     const results = [];
     const processedMonths = [];
-
-    // Process all months that are considered complete
     for (const monthYear of monthYears) {
         if (completeMonths[monthYear]) {
             const { elements } = monthYearGroups[monthYear];
             const monthDoc = parser.parseFromString(fullHtml, 'text/html');
             const monthContainer = monthDoc.querySelector('#time-capsule-container');
-            
-            // Clear existing content
             while (monthContainer.firstChild) {
                 monthContainer.removeChild(monthContainer.firstChild);
             }
-
-            // Add header
             const header = monthDoc.createElement('div');
             header.className = 'nostalgic-header';
             header.textContent = `${chatTitle} - ${monthYear}`;
             monthContainer.appendChild(header);
-
-            // Add month's elements
             elements.forEach(element => {
                 monthContainer.appendChild(element.cloneNode(true));
             });
-
             const monthHtml = monthDoc.documentElement.outerHTML;
             const monthBlob = new Blob([monthHtml], { type: 'text/html' });
-            
             await downloadMedia(monthBlob, `${exportFolder}/${monthYear}.html`);
-            
             results.push(monthYear);
             processedMonths.push(monthYear);
-            
             log(`Generated monthly segment: ${monthYear} (Complete)`);
         } else {
             log(`Skipping incomplete month: ${monthYear}`);
         }
     }
-
     return {
         success: results.length > 0,
         monthYears: processedMonths,
@@ -444,7 +381,6 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
         await scrollChatToTop(endDate);
         const exportFolder = generateExportFolderName(chatTitle);
         const messagesContainer = document.querySelector(SELECTORS.CHAT.scrollContainer);
-     
         async function convertImageToBase64(imageElement) {
             try {
                 const response = await fetch(imageElement.src);
@@ -840,12 +776,9 @@ async function enhanceImageLoading(container) {
         'img[src=""]',
         'div[style*="background-image"][role="button"]'
     ];
-
     const images = container.querySelectorAll(imageSelectors.join(', '));
-    
     for (const img of images) {
         try {
-            // Handle background image elements
             if (img.style.backgroundImage && img.style.backgroundImage !== 'none') {
                 const bgUrl = img.style.backgroundImage.match(/url\(["']?([^"']*)["']?\)/);
                 if (bgUrl && bgUrl[1]) {
@@ -853,15 +786,12 @@ async function enhanceImageLoading(container) {
                 }
                 continue;
             }
-
-            // Handle regular img elements
             if (!img.src || img.src.startsWith('blob:') || img.src === '') {
                 const potentialSrcs = [
                     img.getAttribute('data-src'),
                     img.getAttribute('data-original-src'),
                     img.getAttribute('data-url')
                 ];
-
                 for (const potentialSrc of potentialSrcs) {
                     if (potentialSrc) {
                         img.src = await loadImage(potentialSrc);
@@ -873,7 +803,6 @@ async function enhanceImageLoading(container) {
             console.error('Image loading error:', error);
         }
     }
-
     return container;
 }
 
@@ -883,16 +812,14 @@ async function loadImage(src) {
             mode: 'cors',
             credentials: 'include'
         });
-        
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
         const blob = await response.blob();
         return URL.createObjectURL(blob);
     } catch (error) {
         console.error('Failed to load image:', src, error);
-        return src; // Fallback to original src
+        return src;
     }
 }
 
@@ -903,7 +830,6 @@ async function findOldestVisibleDate() {
                 '[data-id], .x3nfvp2.xxymvpz, [data-pre-plain-text], ' + 
                 'div[role="row"] > div:first-child, span[dir="auto"], .message-in, .message-out'
             );
-            
             for (const element of elementsToCheck) {
                 const possibleTexts = [
                     element.textContent?.trim(),
@@ -1108,7 +1034,6 @@ async function scrollChatToTop(endDate) {
                     }
                 } else if (consecutiveScrollFailures <= SCROLL_CONFIG.MAX_CONSECUTIVE_FAILURES) {
                     log(`Using alternative scrolling method (attempt ${consecutiveScrollFailures})`);
-                    
                     if (consecutiveScrollFailures === 1) {
                         messages[0].scrollIntoView({ block: 'start' });
                         await new Promise(resolve => setTimeout(resolve, 500));
@@ -1221,12 +1146,10 @@ async function attemptChatReset(chatTitle) {
               log("No back button found, trying alternative reset");
               const appWrapper = document.querySelector('#app, .app-wrapper-web');
               if (appWrapper) {
-                  // Force a repaint
                   appWrapper.style.opacity = '0.99';
                   await new Promise(resolve => setTimeout(resolve, 100));
                   appWrapper.style.opacity = '1';
                   await new Promise(resolve => setTimeout(resolve, 1000));
-                  
                   return true;
               }
           }

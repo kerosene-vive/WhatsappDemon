@@ -14,11 +14,6 @@ function setupEventListeners() {
     }
 }
 
-function cleanupOverlays() {
-    document.querySelectorAll('.loading-circle:not(:first-child)').forEach(el => el.remove());
-    document.querySelectorAll('.loading-overlay:not(:first-child)').forEach(el => el.remove());
-}
-
 function createLoadingOverlay(needsLogin = false) {
     const overlay = document.createElement('div');
     overlay.className = 'loading-overlay';
@@ -94,47 +89,6 @@ function createChatSelectionUI() {
     return container;
 }
 
-
-
-function generateMonthOptions() {
-    const months = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    return months.map((month, index) => 
-        `<option value="${index + 1}">${month}</option>`
-    ).join('');
-}
-
-function generateYearOptions() {
-    const currentYear = new Date().getFullYear();
-    const startYear = 2009;
-    let options = '';
-    for (let year = currentYear; year >= startYear; year--) {
-        options += `<option value="${year}">${year}</option>`;
-    }
-    return options;
-}
-
-function setDefaultDateValues(dateSelection) {
-    const currentDate = new Date();
-    const currentMonth = currentDate.getMonth() + 1;
-    const currentYear = currentDate.getFullYear();
-    const endMonth = dateSelection.querySelector('#endMonth');
-    const endYear = dateSelection.querySelector('#endYear');
-    const startMonth = dateSelection.querySelector('#startMonth');
-    const startYear = dateSelection.querySelector('#startYear');
-    endMonth.value = currentMonth.toString();
-    endYear.value = currentYear.toString();
-    if (currentMonth === 1) {
-        startMonth.value = "12";
-        startYear.value = (currentYear - 1).toString();
-    } else {
-        startMonth.value = (currentMonth - 1).toString();
-        startYear.value = currentYear.toString();
-    }
-}
-
 function showPhoneRequirementDisclaimer(selectedTimeRange) {
     if (selectedTimeRange !== '6month' && selectedTimeRange !== 'year') {
       return Promise.resolve(true);
@@ -175,36 +129,6 @@ function showPhoneRequirementDisclaimer(selectedTimeRange) {
         resolve(true);
       });
     });
-}
-
-
-
-function validateDateRange(startMonth, startYear, endMonth, endYear, confirmBtn) {
-    try {
-        const start = new Date(startYear.value, startMonth.value - 1);
-        const end = new Date(endYear.value, endMonth.value - 1);
-        if (!isValidDate(start) || !isValidDate(end)) {
-            confirmBtn.disabled = true;
-            return;
-        }
-        if (start > end) {
-            confirmBtn.disabled = true;
-            alert('Start date cannot be after end date');
-        } else {
-            confirmBtn.disabled = false;
-        }
-    } catch (error) {
-        console.error('Date validation error:', error);
-        confirmBtn.disabled = true;
-    }
-}
-
-function getFirstDayOfMonth(year, month) {
-    const date = new Date(year, month - 1, 1);
-    if (!isValidDate(date)) {
-        throw new Error('Invalid date created');
-    }
-    return date;
 }
 
 function getLastDayOfMonth(year, month) {
@@ -429,8 +353,6 @@ function updateUIForDownload(elements) {
 function createDateSelectionUI() {
     const dateSelection = document.createElement('div');
     dateSelection.className = 'date-selection';
-    
-    // Simplified HTML without the bottom labels
     dateSelection.innerHTML = `
         <div class="date-selection-content">
             <h3 class="time-range-title">Time Range</h3>
@@ -447,15 +369,12 @@ function createDateSelectionUI() {
             </div>
         </div>
     `;
-    
     const mainContent = document.querySelector('.main-content');
     if (mainContent) {
         mainContent.appendChild(dateSelection);
     }
-    
     setupHalfCircleSlider(dateSelection);
     setupDateSelectionListeners(dateSelection);
-    
     return dateSelection;
 }
 
@@ -464,82 +383,53 @@ function setupHalfCircleSlider(dateSelection) {
     const thumb = dateSelection.querySelector('.half-circle-thumb');
     const fill = dateSelection.querySelector('.half-circle-fill');
     const monthValue = dateSelection.querySelector('#monthValue');
-    let currentValue = 1; // Start at 1 month
+    let currentValue = 1;
     const maxValue = 12;
     const minValue = 1;
-    
-    // Force immediate rendering before setting position
     setTimeout(() => {
         setSliderToValue(1);
     }, 0);
-    
     function setSliderToValue(value) {
         currentValue = value;
         monthValue.textContent = value;
-        
-        // Calculate percentage based on value (1=0%, 12=100%)
         const percentage = ((value - minValue) / (maxValue - minValue)) * 100;
-        
-        // Position the thumb using the percentage
         positionThumbAtPercentage(percentage);
     }
-    
     function positionThumbAtPercentage(percentage) {
-        // Convert percentage to radians (0% = PI, 100% = 0)
         const radians = (1 - percentage / 100) * Math.PI;
-        
-        // Calculate position
         const radius = (container.offsetWidth / 2) - 15;
         const centerX = container.offsetWidth / 2;
         const centerY = container.offsetHeight;
-        
         const x = centerX + radius * Math.cos(radians);
         const y = centerY - radius * Math.sin(radians);
-        
-        // Position the thumb
         thumb.style.left = `${x}px`;
         thumb.style.top = `${y}px`;
-        
-        // Update the fill with the fixed function
         updateFill(x, y, centerX, centerY, radius);
     }
-    
+
     function updateFill(x, y, centerX, centerY, radius) {
-        const angle = Math.atan2(centerY - y, x - centerX);
-    
-        // Create the SVG path for a clean arc
-        const startX = centerX - radius; // Left edge
+        const startX = centerX - radius;
         const startY = centerY;
-        
-        // Use the SVG arc command to create a perfect semi-circle slice
         fill.style.clipPath = `path('M ${centerX} ${centerY} L ${startX} ${startY} A ${radius} ${radius} 0 0 1 ${x} ${y} Z')`;
     }
-    
-    // Event handlers for dragging
     let isDragging = false;
-    
     thumb.addEventListener('mousedown', (e) => {
         e.preventDefault();
         isDragging = true;
     });
-    
     container.addEventListener('mousedown', (e) => {
         e.preventDefault();
         isDragging = true;
         updatePositionFromEvent(e);
     });
-    
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
         e.preventDefault();
         updatePositionFromEvent(e);
     });
-    
     document.addEventListener('mouseup', () => {
         isDragging = false;
     });
-    
-    // Touch support
     thumb.addEventListener('touchstart', (e) => {
         e.preventDefault();
         isDragging = true;
@@ -550,61 +440,40 @@ function setupHalfCircleSlider(dateSelection) {
         isDragging = true;
         updatePositionFromEvent(e);
     });
-    
     document.addEventListener('touchmove', (e) => {
         if (!isDragging) return;
         e.preventDefault();
         updatePositionFromEvent(e);
     });
-    
     document.addEventListener('touchend', () => {
         isDragging = false;
     });
-    
     function updatePositionFromEvent(e) {
         const rect = container.getBoundingClientRect();
         const centerX = rect.width / 2;
         const centerY = rect.height;
-        
-        // Get position
         const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
         const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-        
         const x = clientX - rect.left - centerX;
         const y = centerY - (clientY - rect.top);
-        
-        // Calculate angle
         let angle = Math.atan2(y, x);
-        
-        // Handle positions below the center line
         if (y < 0) {
             if (x < 0) {
-                angle = 0; // Force to leftmost position (1 month)
+                angle = 0;
             } else {
-                angle = Math.PI; // Force to rightmost position (12 months)
+                angle = Math.PI;
             }
         }
-        
-        // Constrain angle
         angle = Math.max(0, Math.min(Math.PI, angle));
-        
-        // Deadzone at extremes
         if (angle < 0.1) angle = 0;
         if (angle > Math.PI - 0.1) angle = Math.PI;
-        
-        // Convert to percentage
         const percentage = (1 - (angle / Math.PI)) * 100;
-        
-        // Calculate value
         const newValue = Math.max(minValue, Math.min(maxValue, 
                           Math.round(minValue + (percentage / 100) * (maxValue - minValue))));
-        
         if (newValue !== currentValue) {
             setSliderToValue(newValue);
         }
     }
-    
-    // Function to get the current value
     container.getValue = function() {
         return currentValue;
     };
@@ -614,7 +483,6 @@ function setupDateSelectionListeners(dateSelection) {
     const confirmBtn = dateSelection.querySelector('.confirm-dates');
     const cancelBtn = dateSelection.querySelector('.cancel-dates');
     const halfCircleTrack = dateSelection.querySelector('.half-circle-track');
-    
     confirmBtn.addEventListener('click', async () => {
       try {
         const selectedMonths = halfCircleTrack.getValue ? halfCircleTrack.getValue() : 1;
@@ -639,19 +507,18 @@ function setupDateSelectionListeners(dateSelection) {
         alert('Error processing dates. Please try again.');
       }
     });
-    
     cancelBtn.addEventListener('click', () => {
       dateSelection.classList.remove('show');
       document.querySelector('.chat-selection')?.classList.remove('hidden');
       document.querySelector('#mainDownload')?.classList.remove('hidden');
     });
 }
-// Helper function to convert month count to time range format
+
 function getTimeRangeFromMonths(months) {
     if (months === 1) return '1month';
     if (months === 6) return '6month';
     if (months === 12) return 'year';
-    return `${months}month`;  // Custom format
+    return `${months}month`;
 }
 
 function calculateEndDate(range) {
@@ -666,9 +533,7 @@ function calculateEndDate(range) {
     return endDate;
 }
 
-// Helper function to get the last day of a month
 function getLastDayOfMonth(year, month) {
-    // month is 1-based in this context
     const date = new Date(year, month, 0);
     if (!isValidDate(date)) {
         throw new Error('Invalid date created');
@@ -814,7 +679,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 `;
     document.head.appendChild(style);
-    
     initializeUI();
     setupEventListeners();
 });
