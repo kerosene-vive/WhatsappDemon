@@ -429,14 +429,17 @@ function updateUIForDownload(elements) {
 function createDateSelectionUI() {
     const dateSelection = document.createElement('div');
     dateSelection.className = 'date-selection';
+    
+    // Simplified HTML without the bottom labels
     dateSelection.innerHTML = `
         <div class="date-selection-content">
-            <h3>Time Range</h3>
-            <div class="range-selection">
-                <div class="month-slider-container">
-                    <label for="monthSlider" class="months-label">Months: <span id="monthValue">1</span></label>
-                    <input type="range" id="monthSlider" min="1" max="12" value="1" class="month-slider">
+            <h3 class="time-range-title">Time Range</h3>
+            <div class="month-value-display">Months: <span id="monthValue">1</span></div>
+            <div class="half-circle-container">
+                <div class="half-circle-track">
+                    <div class="half-circle-fill"></div>
                 </div>
+                <div class="half-circle-thumb"></div>
             </div>
             <div class="date-actions">
                 <button class="confirm-dates">Start Export</button>
@@ -444,31 +447,177 @@ function createDateSelectionUI() {
             </div>
         </div>
     `;
+    
     const mainContent = document.querySelector('.main-content');
     if (mainContent) {
         mainContent.appendChild(dateSelection);
     }
+    
+    setupHalfCircleSlider(dateSelection);
     setupDateSelectionListeners(dateSelection);
     
-    // Add slider event listener
-    const slider = dateSelection.querySelector('#monthSlider');
+    return dateSelection;
+}
+
+function setupHalfCircleSlider(dateSelection) {
+    const container = dateSelection.querySelector('.half-circle-track');
+    const thumb = dateSelection.querySelector('.half-circle-thumb');
+    const fill = dateSelection.querySelector('.half-circle-fill');
     const monthValue = dateSelection.querySelector('#monthValue');
+    let currentValue = 1; // Start at 1 month
+    const maxValue = 12;
+    const minValue = 1;
     
-    slider.addEventListener('input', function() {
-        monthValue.textContent = this.value;
+    // Force immediate rendering before setting position
+    setTimeout(() => {
+        setSliderToValue(1);
+    }, 0);
+    
+    function setSliderToValue(value) {
+        currentValue = value;
+        monthValue.textContent = value;
+        
+        // Calculate percentage based on value (1=0%, 12=100%)
+        const percentage = ((value - minValue) / (maxValue - minValue)) * 100;
+        
+        // Position the thumb using the percentage
+        positionThumbAtPercentage(percentage);
+    }
+    
+    function positionThumbAtPercentage(percentage) {
+        // Convert percentage to radians (0% = PI, 100% = 0)
+        const radians = (1 - percentage / 100) * Math.PI;
+        
+        // Calculate position
+        const radius = (container.offsetWidth / 2) - 15;
+        const centerX = container.offsetWidth / 2;
+        const centerY = container.offsetHeight;
+        
+        const x = centerX + radius * Math.cos(radians);
+        const y = centerY - radius * Math.sin(radians);
+        
+        // Position the thumb
+        thumb.style.left = `${x}px`;
+        thumb.style.top = `${y}px`;
+        
+        // Update the fill with the fixed function
+        updateFill(x, y, centerX, centerY, radius);
+    }
+    
+    function updateFill(x, y, centerX, centerY, radius) {
+        const angle = Math.atan2(centerY - y, x - centerX);
+    
+        // Create the SVG path for a clean arc
+        const startX = centerX - radius; // Left edge
+        const startY = centerY;
+        
+        // Use the SVG arc command to create a perfect semi-circle slice
+        fill.style.clipPath = `path('M ${centerX} ${centerY} L ${startX} ${startY} A ${radius} ${radius} 0 0 1 ${x} ${y} Z')`;
+    }
+    
+    // Event handlers for dragging
+    let isDragging = false;
+    
+    thumb.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        isDragging = true;
     });
     
-    return dateSelection;
+    container.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        isDragging = true;
+        updatePositionFromEvent(e);
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        updatePositionFromEvent(e);
+    });
+    
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+    });
+    
+    // Touch support
+    thumb.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        isDragging = true;
+    });
+    
+    container.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        isDragging = true;
+        updatePositionFromEvent(e);
+    });
+    
+    document.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        updatePositionFromEvent(e);
+    });
+    
+    document.addEventListener('touchend', () => {
+        isDragging = false;
+    });
+    
+    function updatePositionFromEvent(e) {
+        const rect = container.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height;
+        
+        // Get position
+        const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+        const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+        
+        const x = clientX - rect.left - centerX;
+        const y = centerY - (clientY - rect.top);
+        
+        // Calculate angle
+        let angle = Math.atan2(y, x);
+        
+        // Handle positions below the center line
+        if (y < 0) {
+            if (x < 0) {
+                angle = 0; // Force to leftmost position (1 month)
+            } else {
+                angle = Math.PI; // Force to rightmost position (12 months)
+            }
+        }
+        
+        // Constrain angle
+        angle = Math.max(0, Math.min(Math.PI, angle));
+        
+        // Deadzone at extremes
+        if (angle < 0.1) angle = 0;
+        if (angle > Math.PI - 0.1) angle = Math.PI;
+        
+        // Convert to percentage
+        const percentage = (1 - (angle / Math.PI)) * 100;
+        
+        // Calculate value
+        const newValue = Math.max(minValue, Math.min(maxValue, 
+                          Math.round(minValue + (percentage / 100) * (maxValue - minValue))));
+        
+        if (newValue !== currentValue) {
+            setSliderToValue(newValue);
+        }
+    }
+    
+    // Function to get the current value
+    container.getValue = function() {
+        return currentValue;
+    };
 }
 
 function setupDateSelectionListeners(dateSelection) {
     const confirmBtn = dateSelection.querySelector('.confirm-dates');
     const cancelBtn = dateSelection.querySelector('.cancel-dates');
-    const monthSlider = dateSelection.querySelector('#monthSlider');
+    const halfCircleTrack = dateSelection.querySelector('.half-circle-track');
     
     confirmBtn.addEventListener('click', async () => {
       try {
-        const selectedMonths = parseInt(monthSlider.value);
+        const selectedMonths = halfCircleTrack.getValue ? halfCircleTrack.getValue() : 1;
         const selectedTimeRange = getTimeRangeFromMonths(selectedMonths);
         const shouldContinue = await showPhoneRequirementDisclaimer(selectedTimeRange);
         if (!shouldContinue) {
@@ -497,7 +646,6 @@ function setupDateSelectionListeners(dateSelection) {
       document.querySelector('#mainDownload')?.classList.remove('hidden');
     });
 }
-
 // Helper function to convert month count to time range format
 function getTimeRangeFromMonths(months) {
     if (months === 1) return '1month';
@@ -552,74 +700,119 @@ window.addEventListener('unload', () => {
 
 document.addEventListener('DOMContentLoaded', () => {
     const style = document.createElement('style');
-     style.textContent = `
-        .month-slider-container {
-            margin: 15px 0;
-            width: 100%;
-        }
-        
-        .time-range-title {
-            color: #4a6f8b;
-            font-size: 22px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-weight: 500;
-        }
-        
-        .month-display {
-            text-align: center;
-            margin-bottom: 15px;
-        }
-        
-        .months-label {
-            font-size: 18px;
-            font-weight: 500;
-        }
-        
-        #monthValue {
-            font-size: 28px;
-            font-weight: bold;
-            color: #128C7E;
-        }
-        
-        .month-slider-container {
-            padding: 0 10px;
-            margin-bottom: 25px;
-        }
-        
-        .month-slider {
-            width: 100%;
-            height: 25px;
-            background: #f1f1f1;
-            outline: none;
-            opacity: 0.7;
-            -webkit-transition: .2s;
-            transition: opacity .2s;
-            border-radius: 5px;
-        }
-        
-        .month-slider:hover {
-            opacity: 1;
-        }
-        
-        .month-slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 25px;
-            height: 25px;
-            background: #128C7E;
-            cursor: pointer;
-            border-radius: 50%;
-        }
-        
-        .month-slider::-moz-range-thumb {
-            width: 25px;
-            height: 25px;
-            background: #128C7E;
-            cursor: pointer;
-            border-radius: 50%;
-        }
-    `;
+    style.textContent = `
+    .date-selection-content {
+        text-align: center;
+        padding: 20px;
+    }
+    
+    .time-range-title {
+        color: #4a6f8b;
+        font-size: 22px;
+        margin-bottom: 20px;
+        text-align: center;
+        font-weight: 500;
+    }
+    
+    .month-value-display {
+        font-size: 18px;
+        font-weight: 500;
+        margin-bottom: 15px;
+        color: #128C7E;
+    }
+    
+    #monthValue {
+        font-size: 28px;
+        font-weight: bold;
+        color: #128C7E;
+    }
+    
+    .half-circle-container {
+        position: relative;
+        width: 240px;
+        height: 140px;
+        margin: 0 auto 30px;
+    }
+    
+    .half-circle-track {
+        position: absolute;
+        width: 240px;
+        height: 120px;
+        background: #f1f1f1;
+        border-top-left-radius: 120px;
+        border-top-right-radius: 120px;
+        box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);
+        cursor: pointer;
+        overflow: visible;
+        left: 0;
+        bottom: 0;
+    }
+    
+    .half-circle-fill {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: #128C7E;
+    opacity: 0.7;
+    pointer-events: none;
+}
+    
+    .half-circle-thumb {
+        position: absolute;
+        width: 24px;
+        height: 24px;
+        background: #ffffff;
+        border: 3px solid #128C7E;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        cursor: grab;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        z-index: 10;
+        left: 0;
+        bottom: 120px;
+    }
+    
+    .half-circle-thumb:active {
+        cursor: grabbing;
+    }
+    
+    .date-actions {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+    }
+    
+    .confirm-dates {
+        background: #128C7E;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 5px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.3s;
+    }
+    
+    .confirm-dates:hover {
+        background: #0e6c5f;
+    }
+    
+    .cancel-dates {
+        background: #e9e9e9;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 5px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.3s;
+    }
+    
+    .cancel-dates:hover {
+        background: #dcdcdc;
+    }
+`;
     document.head.appendChild(style);
     
     initializeUI();
