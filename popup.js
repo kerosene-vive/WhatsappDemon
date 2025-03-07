@@ -506,31 +506,26 @@ function getTimeRangeFromMonths(months) {
     return `${months}month`;  // Custom format
 }
 
-// Update calculateEndDate to handle custom month ranges
 function calculateEndDate(range) {
     const currentDate = new Date();
     let endDate = new Date();
-    
-    if (range === 'week') {
-        endDate.setDate(currentDate.getDate() - 7);
-    } else if (range === 'month' || range === '1month') {
-        endDate.setMonth(currentDate.getMonth() - 1);
-    } else if (range === '6month') {
-        endDate.setMonth(currentDate.getMonth() - 6);
-    } else if (range === 'year') {
-        endDate.setFullYear(currentDate.getFullYear() - 1);
-    } else if (range.endsWith('month')) {
-        // Handle custom month range
-        const months = parseInt(range.replace('month', ''));
-        endDate.setMonth(currentDate.getMonth() - months);
-    } else {
-        throw new Error('Invalid date range selected');
-    }
-    
+    let months = parseInt(range.replace('month', ''));
+    endDate.setMonth(currentDate.getMonth() - (months + 1));
     if (!isValidDate(endDate)) {
         throw new Error('Invalid date calculated');
     }
+    endDate = getLastDayOfMonth(endDate.getFullYear(), endDate.getMonth() + 1);
     return endDate;
+}
+
+// Helper function to get the last day of a month
+function getLastDayOfMonth(year, month) {
+    // month is 1-based in this context
+    const date = new Date(year, month, 0);
+    if (!isValidDate(date)) {
+        throw new Error('Invalid date created');
+    }
+    return date;
 }
 
 
