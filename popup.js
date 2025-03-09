@@ -91,7 +91,7 @@ function createChatSelectionUI() {
 
 function showPhoneRequirementDisclaimer(selectedTimeRange) {
     const monthValue = parseInt(selectedTimeRange.replace('month', ''));
-    if (monthValue < 5) {
+    if (monthValue < 2) {
       return Promise.resolve(true);
     }
     return new Promise(resolve => {
@@ -519,11 +519,6 @@ function getTimeRangeFromMonths(months) {
     if (months === 1) return '1month';
     if (months === 6) return '6month';
     if (months === 12) return 'year';
-    else if (range.endsWith('month')) {
-        let months = parseInt(range.replace('month', ''));
-        months += 1;
-        endDate.setMonth(currentDate.getMonth() - months);
-    }
     return `${months}month`;
 }
 
