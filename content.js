@@ -12,12 +12,13 @@ let initializationAttempts = 0;
 const MAX_INIT_ATTEMPTS = 5;
 let availableChats = [];
 let processingAutomation = false;
+
 const SCROLL_CONFIG = {
     MAX_CONSECUTIVE_FAILURES: 3,
     MAX_TOTAL_FAILURES: 15,
-    SCROLL_BATCH_SIZE: 30,
-    SCROLL_BATCH_PAUSE: 2000,
-    DATE_CHECK_INTERVAL: 10
+    SCROLL_BATCH_SIZE: 1200,
+    SCROLL_BATCH_PAUSE: 5,
+    DATE_CHECK_INTERVAL: 5
 };
 const SELECTORS = {
     CHAT_LIST: { container: '#pane-side', messages: '[role="row"]', mainPanel: '#main' },
