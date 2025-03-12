@@ -444,230 +444,270 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
             <style>
                 ${capturedStyles}
-                :root {
-                    --bg-color: #f0f2f5;
-                    --header-bg: #d9fdd3;
-                    --header-text: #0b806a;
-                    --bubble-in: #ffffff;
-                    --bubble-out: #d9fdd3;
-                    --text-color: #111b21;
-                    --meta-text: #667781;
-                    --border-radius: 12px;
-                    --shadow: 0 1px 3px rgba(0,0,0,0.08);
-                }
-                [data-theme="dark"] {
-                    --bg-color: #111b21;
-                    --header-bg: #202c33;
-                    --header-text: #00a884;
-                    --bubble-in: #202c33;
-                    --bubble-out: #005c4b;
-                    --text-color: #e9edef;
-                    --meta-text: #8696a0;
-                }
-                body, html {
-                    margin: 0;
-                    padding: 0;
-                    height: 100%;
-                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                    background-color: var(--bg-color);
-                    color: var(--text-color);
-                    line-height: 1.5;
-                    -webkit-text-size-adjust: 100%;
-                }
-                .nostalgic-header {
-                    text-align: center;
-                    padding: 15px 10px;
-                    font-size: 20px;
-                    font-weight: bold;
-                    border-bottom: 1px solid rgba(0,0,0,0.1);
-                    margin-bottom: 10px;
-                    position: relative;
-                    background: var(--header-bg);
-                    z-index: 100;
-                    color: var(--header-text);
-                    box-shadow: var(--shadow);
-                    border-radius: 0;
-                    letter-spacing: 0.5px;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                }
-                .header-emoji {
-                    font-size: 18px;
-                    margin: 0 6px;
-                    animation: float 2s infinite ease-in-out alternate;
-                }
-                
-                @keyframes float {
-                    0% { transform: translateY(0px); }
-                    100% { transform: translateY(-3px); }
-                }
-                #time-capsule-container {
-                    max-width: 600px;
-                    margin: 0 auto;
-                    height: 100vh;
-                    overflow-y: auto;
-                    position: relative;
-                    padding: 0 10px;
-                    box-sizing: border-box;
-                    scroll-behavior: smooth;
-                    -webkit-overflow-scrolling: touch;
-                }
-                /* Message bubble improvements */
-                .message-in, .message-out {
-                    margin: 8px 0 !important;
-                    padding: 8px 12px !important;
-                    border-radius: var(--border-radius) !important;
-                    box-shadow: var(--shadow) !important;
-                    max-width: 80% !important;
-                    word-wrap: break-word !important;
-                    position: relative !important;
-                }
-                .message-in {
-                    background-color: var(--bubble-in) !important;
-                    margin-right: auto !important;
-                    border-top-left-radius: 0 !important;
-                }
-                .message-out {
-                    background-color: var(--bubble-out) !important;
-                    margin-left: auto !important;
-                    border-top-right-radius: 0 !important;
-                }
-                /* Message meta (time, status) */
-                .message-meta {
-                    font-size: 11px !important;
-                    color: var(--meta-text) !important;
-                    text-align: right !important;
-                    margin-top: 3px !important;
-                }
-                /* Audio message styling */
-                .message-in .audio-player, .message-out .audio-player {
-                    border-radius: 10px;
-                    display: flex;
-                    align-items: center;
-                    padding: 8px 12px;
-                    position: relative;
-                }
-                .message-in .audio-player {
-                    background-color: var(--bubble-in);
-                }
-                .message-out .audio-player {
-                    background-color: var(--bubble-out);
-                }
-                /* Play button styling */
-                .audio-play-button {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: 50%;
-                    background-color: var(--header-text);
-                    color: white;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin-right: 12px;
-                    cursor: pointer;
-                    transition: transform 0.2s;
-                }
-                .audio-play-button:active {
-                    transform: scale(0.95);
-                }
-                /* Audio waveform styling */
-                .audio-waveform {
-                    flex-grow: 1;
-                    height: 28px;
-                    margin: 0 10px;
-                    display: flex;
-                    align-items: center;
-                }
-                .audio-waveform-bar {
-                    background-color: var(--meta-text);
-                    width: 2px;
-                    height: 16px;
-                    margin: 0 1px;
-                    border-radius: 1px;
-                }
-                /* Time counter styling */
-                .audio-time {
-                    font-size: 12px;
-                    color: var(--meta-text);
-                    margin-right: 5px;
-                    font-weight: 400;
-                }
-                /* Profile picture styling */
-                .profile-picture {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: 50%;
-                    overflow: hidden;
-                    margin-right: 10px;
-                    border: 2px solid var(--header-text);
-                }
-                /* Ensure images are responsive */
-                #time-capsule-container img {
-                    max-width: 100%;
-                    height: auto;
-                    object-fit: contain;
-                    border-radius: 8px;
-                }
-                /* Date separators */
-                .chat-date-separator {
-                    text-align: center;
-                    margin: 16px 0;
-                    position: relative;
-                }
-                .chat-date-text {
-                    background: var(--header-bg);
-                    padding: 5px 10px;
-                    border-radius: 12px;
-                    font-size: 12px;
-                    display: inline-block;
-                    box-shadow: var(--shadow);
-                    color: var(--header-text);
-                    font-weight: 500;
-                }
-                /* Theme toggle */
-                .theme-toggle {
-                    position: fixed;
-                    bottom: 20px;
-                    right: 20px;
-                    width: 40px;
-                    height: 40px;
-                    border-radius: 50%;
-                    background: var(--header-bg);
-                    color: var(--header-text);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-                    cursor: pointer;
-                    z-index: 1000;
-                    border: none;
-                }
-                /* Kawaii elements */
-                .message-in::before, .message-out::before {
-                    content: '';
-                    position: absolute;
-                    width: 0;
-                    height: 0;
-                    border-style: solid;
-                }
-                .message-in::before {
-                    border-width: 0 10px 10px 0;
-                    border-color: transparent var(--bubble-in) transparent transparent;
-                    top: 0;
-                    left: -10px;
-                }
-                .message-out::before {
-                    border-width: 0 0 10px 10px;
-                    border-color: transparent transparent transparent var(--bubble-out);
-                    top: 0;
-                    right: -10px;
-                }
-                @media (max-width: 600px) {
-                    .message-in, .message-out {
-                        max-width: 85% !important;
-                    }
-                }
+:root {
+    --bg-color: #e5ddd5;
+    --header-bg: #039be5; /* Celeste vivace */
+    --header-text: #ffffff;
+    --bubble-in: #ffffff;
+    --bubble-out: #dcf8c6;
+    --text-color: #303030;
+    --meta-text: #8c8c8c;
+    --border-radius: 7px;
+    --shadow: none;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+}
+
+.nostalgic-header {
+    text-align: center;
+    padding: 15px 10px;
+    font-size: 20px;
+    font-weight: normal;
+    border-bottom: none;
+    margin-bottom: 10px;
+    position: relative;
+    background: var(--header-bg);
+    z-index: 100;
+    color: var(--header-text);
+    box-shadow: none;
+    border-radius: 0;
+    letter-spacing: 0.5px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-shadow: none;
+}
+
+.header-emoji {
+    display: none;
+}
+
+#time-capsule-container {
+    max-width: 600px;
+    margin: 0 auto;
+    height: 100vh;
+    overflow-y: auto;
+    position: relative;
+    padding: 0 6px;
+    box-sizing: border-box;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Soluzione radicale per rimuovere i rettangoli - selettori più specifici */
+div.message-in, div.message-out,
+.message-in, .message-out,
+#time-capsule-container div.message-in, #time-capsule-container div.message-out {
+    border: none !important;
+    margin: 2px 0 !important;
+    padding: 8px 12px !important;
+    border-radius: var(--border-radius) !important;
+    box-shadow: none !important;
+    max-width: 80% !important;
+    word-wrap: break-word !important;
+    position: relative !important;
+    outline: none !important;
+    background-clip: padding-box !important;
+}
+
+.message-in {
+    background-color: var(--bubble-in) !important;
+    margin-right: auto !important;
+    border-top-left-radius: var(--border-radius) !important;
+}
+
+.message-out {
+    background-color: var(--bubble-out) !important;
+    margin-left: auto !important;
+    border-top-right-radius: var(--border-radius) !important;
+}
+
+/* Rimuovi tutti i div e span contenitori aggiuntivi */
+.message-in > div, .message-out > div,
+.message-in > span, .message-out > span {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Elimina rettangoli */
+*[data-id], *[data-testid], *[role="row"], *[role="gridcell"] {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* Message meta (time, status) */
+.message-meta {
+    font-size: 10.5px !important;
+    color: var(--meta-text) !important;
+    text-align: right !important;
+    margin-top: 1px !important;
+    background: transparent !important;
+}
+
+/* Audio message styling */
+.message-in .audio-player, .message-out .audio-player {
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    position: relative;
+}
+
+.message-in .audio-player {
+    background-color: var(--bubble-in);
+}
+
+.message-out .audio-player {
+    background-color: var(--bubble-out);
+}
+
+/* Play button styling */
+.audio-play-button {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: var(--header-bg);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.audio-play-button:active {
+    transform: scale(0.95);
+}
+
+/* Audio waveform styling */
+.audio-waveform {
+    flex-grow: 1;
+    height: 28px;
+    margin: 0 10px;
+    display: flex;
+    align-items: center;
+}
+
+.audio-waveform-bar {
+    background-color: var(--meta-text);
+    width: 2px;
+    height: 16px;
+    margin: 0 1px;
+    border-radius: 1px;
+}
+
+/* Time counter styling */
+.audio-time {
+    font-size: 12px;
+    color: var(--meta-text);
+    margin-right: 5px;
+    font-weight: 400;
+}
+
+/* Profile picture styling */
+.profile-picture {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    margin-right: 10px;
+    border: 2px solid var(--header-bg);
+}
+
+/* Ensure images are responsive */
+#time-capsule-container img {
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+/* Date separators */
+.chat-date-separator {
+    text-align: center;
+    margin: 8px 0;
+    position: relative;
+    border: none !important;
+    background: transparent !important;
+}
+
+.chat-date-text {
+    background: #d4dbdc;
+    padding: 5px 10px;
+    border-radius: 12px;
+    font-size: 12.5px;
+    display: inline-block;
+    box-shadow: none;
+    color: #303030;
+    font-weight: normal;
+    border: none !important;
+}
+
+/* Remove theme toggle button */
+.theme-toggle {
+    display: none !important;
+}
+
+/* Remove bubble speech tails */
+.message-in::before, .message-out::before {
+    display: none !important;
+    content: none !important;
+}
+
+/* ELIMINA TUTTI I RETTANGOLI - soluzione radicale */
+#time-capsule-container * {
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* Riapplica gli stili per i messaggi dopo aver rimosso tutti i bordi */
+#time-capsule-container div.message-in {
+    background-color: var(--bubble-in) !important;
+    border-radius: var(--border-radius) !important;
+    margin: 4px 0 !important;
+    margin-right: auto !important;
+    padding: 8px 12px !important;
+    max-width: 80% !important;
+}
+
+#time-capsule-container div.message-out {
+    background-color: var(--bubble-out) !important;
+    border-radius: var(--border-radius) !important;
+    margin: 4px 0 !important;
+    margin-left: auto !important;
+    padding: 8px 12px !important;
+    max-width: 80% !important;
+}
+
+@media (max-width: 600px) {
+    #time-capsule-container div.message-in, 
+    #time-capsule-container div.message-out {
+        max-width: 85% !important;
+    }
+}
+
+/* Disable animations */
+@keyframes float {
+    0% { transform: none; }
+    100% { transform: none; }
+}
             </style>
         </head>
         <body>
@@ -675,9 +715,6 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 ${headerHtml}
                 ${processedContainer.innerHTML}
             </div>
-            <button class="theme-toggle" id="themeToggle">
-                <i class="fas fa-moon"></i>
-            </button>
             <script>
                 window.onload = function() {
                     // Prevent pinch zoom on mobile
@@ -706,19 +743,6 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                             }
                         });
                     }
-                    
-                    // Theme toggle functionality
-                    const themeToggle = document.getElementById('themeToggle');
-                    const icon = themeToggle.querySelector('i');
-                    
-                    themeToggle.addEventListener('click', function() {
-                        document.body.setAttribute('data-theme', 
-                            document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
-                        
-                        icon.className = document.body.getAttribute('data-theme') === 'dark' 
-                            ? 'fas fa-sun' 
-                            : 'fas fa-moon';
-                    });
                     
                     // Fix audio player appearance
                     const audioPlayers = document.querySelectorAll('.audio-player');
