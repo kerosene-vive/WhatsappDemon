@@ -445,7 +445,7 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
             <style>
                 ${capturedStyles}
 :root {
-    --bg-color: #e5ddd5;
+    --bg-color: #F8EAC8;;
     --header-bg: #039be5; /* Celeste vivace */
     --header-text: #ffffff;
     --bubble-in: #ffffff;
