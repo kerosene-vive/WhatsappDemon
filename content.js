@@ -430,20 +430,21 @@ async function extractChatContentAndMedia(chatTitle, endDate) {
                 }
             })
             .join('\n');
+        
         const headerHtml = `
-            <div class="nostalgic-header">
-                <span class="header-emoji">💫</span> ${chatTitle} <span class="header-emoji">💭</span>
-            </div>
-        `;
-        const fullPageHTML = `<!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-            <title>${chatTitle}</title>
-            <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-            <style>
-                ${capturedStyles}
+    <div class="nostalgic-header">
+        <span class="header-emoji">💫</span> ${chatTitle} <span class="header-emoji">💭</span>
+    </div>
+`;
+const fullPageHTML = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>${chatTitle}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        ${capturedStyles}
 :root {
     --bg-color: #F8EAC8;;
     --header-bg: #039be5; /* Celeste vivace */
@@ -501,6 +502,7 @@ body, html {
     box-sizing: border-box;
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
+    padding-top: 5px;
 }
 
 /* Soluzione radicale per rimuovere i rettangoli - selettori più specifici */
@@ -645,6 +647,7 @@ div.message-in, div.message-out,
     position: relative;
     border: none !important;
     background: transparent !important;
+    display: none;
 }
 
 .chat-date-text {
@@ -670,7 +673,148 @@ div.message-in, div.message-out,
     content: none !important;
 }
 
-/* ELIMINA TUTTI I RETTANGOLI - soluzione radicale */
+/* Floating date indicator */
+.floating-date-indicator {
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(3, 155, 229, 0.85);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    opacity: 0;
+    pointer-events: none;
+    text-align: center;
+    max-width: 90%;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.floating-date-indicator.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.floating-date-indicator.hiding {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+}
+
+.date-icon {
+    margin-right: 6px;
+}
+
+/* Large side date display */
+.side-date-display {
+    position: fixed;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%) scale(0.9);
+    background: rgba(3, 155, 229, 0.9);
+    color: white;
+    padding: 15px;
+    border-radius: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    text-align: center;
+    z-index: 1000;
+    box-shadow: 0 2px 20px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.side-date-display.visible {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+}
+
+.side-date-display.hiding {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.9);
+}
+
+.side-date-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.side-date-day {
+    font-size: 32px;
+    font-weight: bold;
+    line-height: 1;
+    margin-bottom: 5px;
+}
+
+.side-date-month-year {
+    font-size: 14px;
+    text-transform: uppercase;
+    font-weight: 500;
+}
+
+/* Persistent Apple-style date header */
+.persistent-date-header {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 8px 0;
+    text-align: center;
+    z-index: 200;
+    margin: 8px auto;
+    max-width: 180px;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.persistent-date-text {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(150, 150, 150, 0.3);
+    color: #000;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 18px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    letter-spacing: 0.3px;
+    border: 0.5px solid rgba(100, 100, 100, 0.1);
+}
+
+.calendar-emoji {
+    margin-right: 5px;
+    font-size: 14px;
+}
+
+@media (max-width: 600px) {
+    .side-date-display {
+        right: 5px;
+        padding: 10px;
+    }
+    
+    .side-date-day {
+        font-size: 24px;
+    }
+    
+    .side-date-month-year {
+        font-size: 12px;
+    }
+}
+
 #time-capsule-container * {
     border: none !important;
     box-shadow: none !important;
@@ -708,74 +852,293 @@ div.message-in, div.message-out,
     0% { transform: none; }
     100% { transform: none; }
 }
-            </style>
-        </head>
-        <body>
-            <div id="time-capsule-container">
-                ${headerHtml}
-                ${processedContainer.innerHTML}
-            </div>
-            <script>
-                window.onload = function() {
-                    // Prevent pinch zoom on mobile
-                    document.addEventListener('gesturestart', function(e) {
-                        e.preventDefault();
-                    });
+    </style>
+</head>
+<body>     
+    <div id="floating-date-indicator" class="floating-date-indicator">
+        <span class="date-icon">🗓️</span>
+        <span id="current-date-text">Loading...</span>
+    </div>
+    <div id="side-date-display" class="side-date-display">
+        <div class="side-date-content">
+            <div class="side-date-day">01</div>
+            <div class="side-date-month-year">JAN 2023</div>
+        </div>
+    </div>
+    <div id="time-capsule-container">
+        ${headerHtml}
+        ${processedContainer.innerHTML}
+    </div>
+    <script>
+    window.onload = function() {
+        // Prevent pinch zoom on mobile
+        document.addEventListener('gesturestart', function(e) {
+            e.preventDefault();
+        });
+        
+        // Initialize the UI
+        initializeUI();
+    }
+
+    // Function to add sticky date headers with language detection
+    function addDateSeparators() {
+        const container = document.getElementById('time-capsule-container');
+        const messages = document.querySelectorAll('div.message-in, div.message-out');
+        let currentDate = '';
+        const dateElements = [];
+        
+        // If we already have date headers, remove them
+        const existingHeaders = document.querySelectorAll('.persistent-date-header');
+        existingHeaders.forEach(header => header.remove());
+        
+        // Helper function to detect language from date format
+        function detectLanguage(dateStr) {
+            // Check if it's an Italian format (usually DD/MM/YYYY)
+            // or English format (could be MM/DD/YYYY)
+            // For simplicity, we'll assume DD/MM/YYYY for both but use browser language
+            // as the default formatting choice
+            const userLang = navigator.language || navigator.userLanguage;
+            return userLang.startsWith('it') ? 'it' : 'en';
+        }
+        
+        // Helper function to format date according to language
+        function formatDate(dateStr, language) {
+            const [day, month, year] = dateStr.split('/').map(part => part.trim());
+            
+            // Month names in Italian and English
+            const monthNames = {
+                'it': [
+                    'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+                    'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
+                ],
+                'en': [
+                    'January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'
+                ]
+            };
+            
+            const monthIndex = parseInt(month) - 1;
+            const monthName = monthNames[language][monthIndex];
+            
+            // Format based on language
+            if (language === 'it') {
+                return \`\${day} \${monthName} \${year}\`;
+            } else {
+                return \`\${monthName} \${day}, \${year}\`;
+            }
+        }
+        
+        // Process all messages and add date headers
+        messages.forEach(message => {
+            const dateMeta = message.querySelector('[data-pre-plain]');
+            if (dateMeta) {
+                const dateText = dateMeta.getAttribute('data-pre-plain');
+                const dateMatch = dateText.match(/\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}/);
+                
+                if (dateMatch && dateMatch[0] !== currentDate) {
+                    currentDate = dateMatch[0];
                     
-                    // Add date separators
-                    function addDateSeparators() {
-                        const messages = document.querySelectorAll('div.message-in, div.message-out');
-                        let currentDate = '';
-                        
-                        messages.forEach(message => {
-                            const dateMeta = message.querySelector('[data-pre-plain]');
-                            if (dateMeta) {
-                                const dateText = dateMeta.getAttribute('data-pre-plain');
-                                const dateMatch = dateText.match(/\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}/);
-                                
-                                if (dateMatch && dateMatch[0] !== currentDate) {
-                                    currentDate = dateMatch[0];
-                                    const separator = document.createElement('div');
-                                    separator.className = 'chat-date-separator';
-                                    separator.innerHTML = \`<span class="chat-date-text">🗓️ \${currentDate} 🗓️</span>\`;
-                                    message.parentNode.insertBefore(separator, message);
-                                }
-                            }
-                        });
-                    }
+                    // Detect language from date or interface
+                    const language = detectLanguage(currentDate);
+                    const formattedDate = formatDate(currentDate, language);
                     
-                    // Fix audio player appearance
-                    const audioPlayers = document.querySelectorAll('.audio-player');
-                    audioPlayers.forEach(player => {
-                        // Add play button icon if missing
-                        const playButton = player.querySelector('.audio-play-button');
-                        if (playButton && !playButton.querySelector('i')) {
-                            playButton.innerHTML = '<i class="fas fa-play"></i>';
+                    // Create a sticky header for this date
+                    const dateHeader = document.createElement('div');
+                    dateHeader.className = 'persistent-date-header';
+                    dateHeader.innerHTML = \`
+                        <div class="persistent-date-text">
+                            <span class="calendar-emoji">📅</span>
+                            <span>\${formattedDate}</span>
+                        </div>
+                    \`;
+                    
+                    // Store date information as a data attribute for easier retrieval
+                    const [day, month, year] = currentDate.split('/');
+                    dateHeader.setAttribute('data-date', \`\${day},\${month},\${year},\${language}\`);
+                    
+                    // Insert the header at the position of this message
+                    message.parentNode.insertBefore(dateHeader, message);
+                    
+                    dateElements.push({
+                        element: dateHeader,
+                        dateText: currentDate,
+                        language: language,
+                        formattedDate: {
+                            day: day,
+                            month: month,
+                            year: year,
+                            fullText: formattedDate
                         }
-                        
-                        // Ensure waveform has bars
-                        const waveform = player.querySelector('.audio-waveform');
-                        if (waveform && waveform.children.length === 0) {
-                            for (let i = 0; i < 20; i++) {
-                                const bar = document.createElement('div');
-                                bar.className = 'audio-waveform-bar';
-                                bar.style.height = \`\${Math.floor(Math.random() * 20) + 5}px\`;
-                                waveform.appendChild(bar);
-                            }
-                        }
                     });
-                    
-                    // Add message timestamps class for styling
-                    document.querySelectorAll('[data-pre-plain]').forEach(meta => {
-                        meta.classList.add('message-meta');
-                    });
-                    
-                    // Run setup functions
-                    addDateSeparators();
                 }
-            </script>
-        </body>
-        </html>`;
+            }
+        });
+        
+        return dateElements;
+    }
+
+    // Set up improved date indicators with language support
+    function setupFloatingDateIndicator() {
+        const container = document.getElementById('time-capsule-container');
+        
+        // We no longer need the floating indicator since headers are persistent
+        const floatingIndicator = document.getElementById('floating-date-indicator');
+        if (floatingIndicator) {
+            floatingIndicator.style.display = 'none';
+        }
+        
+        const sideDateDisplay = document.getElementById('side-date-display');
+        if (!sideDateDisplay) return;
+        
+        const sideDateDay = sideDateDisplay.querySelector('.side-date-day');
+        const sideDateMonthYear = sideDateDisplay.querySelector('.side-date-month-year');
+        
+        // Get all date headers
+        const dateHeaders = document.querySelectorAll('.persistent-date-header');
+        if (dateHeaders.length === 0) return;
+        
+        // Month abbreviations in both languages
+        const monthAbbr = {
+            'it': ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'],
+            'en': ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+        };
+        
+        // Add custom data for each header
+        const dateElements = Array.from(dateHeaders).map(header => {
+            const headerData = header.getAttribute('data-date');
+            if (headerData) {
+                const [day, month, year, language] = headerData.split(',');
+                return {
+                    element: header,
+                    position: 0, // Will be updated
+                    formattedDate: {
+                        day: day,
+                        monthYear: \`\${monthAbbr[language || 'en'][parseInt(month) - 1]} \${year}\`
+                    }
+                };
+            }
+            
+            // Fallback if data attribute isn't available (shouldn't happen with our implementation)
+            return {
+                element: header,
+                position: 0,
+                formattedDate: {
+                    day: "??",
+                    monthYear: "???"
+                }
+            };
+        });
+        
+        let sideDateTimeout;
+        let currentDateIndex = -1;
+        let isScrolling = false;
+        
+        // Function to update the position information
+        function updatePositions() {
+            dateElements.forEach(item => {
+                item.position = item.element.getBoundingClientRect().top;
+            });
+        }
+        
+        // Function to determine which date is currently visible
+        function determineVisibleDate() {
+            updatePositions();
+            
+            // Find the last date that has passed the top of the viewport + header height
+            const headerHeight = 50; // Approximate height of the header
+            const visibleIndex = dateElements.findIndex(item => item.position > headerHeight);
+            
+            // If we found a visible date, use the one just before it (or the first if none before)
+            const activeIndex = visibleIndex > 0 ? visibleIndex - 1 : (visibleIndex === -1 ? dateElements.length - 1 : 0);
+            
+            // Only update if the date has changed
+            if (currentDateIndex !== activeIndex || isScrolling) {
+                currentDateIndex = activeIndex;
+                const activeDate = dateElements[activeIndex];
+                
+                // Update the side date display
+                sideDateDay.textContent = activeDate.formattedDate.day;
+                sideDateMonthYear.textContent = activeDate.formattedDate.monthYear;
+                
+                // Show the side indicator (only while scrolling)
+                sideDateDisplay.classList.add('visible');
+                sideDateDisplay.classList.remove('hiding');
+                
+                // Set timeout to hide the side indicator after scrolling stops
+                clearTimeout(sideDateTimeout);
+                sideDateTimeout = setTimeout(() => {
+                    sideDateDisplay.classList.add('hiding');
+                    sideDateDisplay.classList.remove('visible');
+                }, 2000);
+            }
+        }
+        
+        // Add scroll event listener with throttling
+        let scrollTimeout;
+        container.addEventListener('scroll', () => {
+            isScrolling = true;
+            clearTimeout(scrollTimeout);
+            
+            // Use requestAnimationFrame to limit the number of calculations
+            requestAnimationFrame(determineVisibleDate);
+            
+            // Reset scrolling flag after scrolling stops
+            scrollTimeout = setTimeout(() => {
+                isScrolling = false;
+            }, 150);
+        });
+        
+        // Make the side date display appear on initial load
+        setTimeout(() => {
+            // Initialize on load
+            determineVisibleDate();
+            
+            // Explicitly show the side date on initial load
+            sideDateDisplay.classList.add('visible');
+            sideDateDisplay.classList.remove('hiding');
+            
+            // Hide after a few seconds
+            setTimeout(() => {
+                sideDateDisplay.classList.add('hiding');
+                sideDateDisplay.classList.remove('visible');
+            }, 4000);
+        }, 500);
+    }
+
+    // Call the setup function after adding date separators
+    function initializeUI() {
+        addDateSeparators();
+        setupFloatingDateIndicator();
+        
+        // Set up other UI elements (keep your existing code here)
+        const audioPlayers = document.querySelectorAll('.audio-player');
+        audioPlayers.forEach(player => {
+            // Add play button icon if missing
+            const playButton = player.querySelector('.audio-play-button');
+            if (playButton && !playButton.querySelector('i')) {
+                playButton.innerHTML = '<i class="fas fa-play"></i>';
+            }
+            
+            // Ensure waveform has bars
+            const waveform = player.querySelector('.audio-waveform');
+            if (waveform && waveform.children.length === 0) {
+                for (let i = 0; i < 20; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'audio-waveform-bar';
+                    bar.style.height = \`\${Math.floor(Math.random() * 20) + 5}px\`;
+                    waveform.appendChild(bar);
+                }
+            }
+        });
+        
+        // Add message timestamps class for styling
+        document.querySelectorAll('[data-pre-plain]').forEach(meta => {
+            meta.classList.add('message-meta');
+        });
+    }
+    </script>
+</body>
+</html>`;
         log('Splitting chat into monthly segments...');
         const splitResult = await splitHtmlByMonthYear(fullPageHTML, chatTitle, exportFolder);
         return {
