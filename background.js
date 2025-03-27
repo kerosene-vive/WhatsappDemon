@@ -193,11 +193,28 @@ async function injectContentScript(tabId) {
         } catch (pingError) {
             log('Content script not detected, will inject');
         }
-        await chrome.scripting.executeScript({
-            target: { tabId },
-            files: ['content.js']
-        });
-        log('Content script injected successfully');
+        
+        // Inject all the content script files in the correct order
+        const contentScripts = [
+            'content/constants.js',
+            'content/utils.js',
+            'content/ui-handlers.js',
+            'content/chat-extraction.js',
+            'content/automation.js',
+            'content/main.js'
+        ];
+        
+        for (const script of contentScripts) {
+            await chrome.scripting.executeScript({
+                target: { tabId },
+                files: [script]
+            });
+            log(`Injected ${script}`);
+            // Small delay to ensure proper loading order
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        
+        log('All content scripts injected successfully');
         return true;
     } catch (error) {
         log(`Content script injection error: ${error.message}`);

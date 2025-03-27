@@ -9,7 +9,7 @@
     "128": "icons/icon-128.png"
   },
   "version": "1.0",
- "permissions": [
+  "permissions": [
     "activeTab",
     "storage",
     "tabs",
@@ -18,7 +18,7 @@
     "downloads",
     "sidePanel",
     "webNavigation"
-],
+  ],
   "side_panel": {
     "default_path": "sidepanel.html"
   },
@@ -37,23 +37,29 @@
   ],
   "background": {
     "service_worker": "background.js"
-   },
+  },
   "content_scripts": [{
     "matches": ["https://web.whatsapp.com/*"],
     "js": [
-      "content.js"
+      "content/constants.js",
+      "content/utils.js",
+      "content/ui-handlers.js",
+      "content/chat-extraction.js",
+      "content/automation.js",
+      "content/main.js"
     ]
   }],
   "optional_permissions": [
     "system.display"
-],
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'"
-},
+  },
   "web_accessible_resources": [{
     "resources": [
       "notification.wav",
-      "lib/*"
+      "lib/*",
+      "content/*"
     ],
     "matches": ["https://web.whatsapp.com/*"]
   }]
